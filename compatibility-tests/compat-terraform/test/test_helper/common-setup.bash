@@ -41,6 +41,7 @@ export LB_POOL_NAME="floci-test-lb-pool"
 export AGW_NAME="floci-test-agw"
 export SQL_NAME="floci-test-sql"
 export SQL_DB_NAME="floci-test-sqldb"
+export SEARCH_NAME="flocitestsearch"
 export SUB_ID="${TF_VAR_subscription_id}"
 
 arm_get() {

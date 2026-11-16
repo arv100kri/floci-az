@@ -27,7 +27,7 @@ checkouts that is not part of this repository (`tools/cloud/README.md` says how 
   `authentication-national-cloud.md`, the azure-cli storage client factory and a few REST spec
   files: the suffixes and hosts the SDK tables do not carry. Each such value must appear verbatim
   in its file or the generation fails. The same comparison table also cross-checks the API
-  Management suffix go-azure-sdk gives for the public and US Gov clouds.
+  Management and Azure AI Search suffixes go-azure-sdk gives for the public and US Gov clouds.
 
 A cell no local file settles is emitted as `{"value": null, "source": "UNSETTLED: <what to
 verify>"}` and never as fact. A metadata key with no source (or with sources that disagree) is
@@ -102,7 +102,7 @@ API_VERSIONS = ["2018-01-01", "2019-05-01", "2022-09-01"]
 # Must stay in step with io.floci.az.core.cloud.CloudSuffix (CloudCatalogTest checks the Java side).
 SUFFIX_KEYS = ["BLOB", "DFS", "QUEUE", "TABLE", "KEYVAULT", "MHSM", "ACR", "SERVICEBUS", "SIGNALR", "APPCONFIG",
                "SQL", "POSTGRES", "MYSQL", "MARIADB", "REDIS", "EVENTGRID", "CONTAINERAPPS", "COMMUNICATION", "AKS",
-               "ACI", "APIM", "WEB"]
+               "ACI", "APIM", "WEB", "SEARCH"]
 STORAGE_SERVICES = {"BLOB": "blob", "DFS": "dfs", "QUEUE": "queue", "TABLE": "table"}
 # CloudSuffix -> (cloud.py CloudSuffixes attribute, go-azure-sdk environment field). Either may be None.
 SDK_SUFFIXES = {
@@ -116,11 +116,13 @@ SDK_SUFFIXES = {
     "MYSQL": ("mysql_server_endpoint", "MySql"),
     "MARIADB": ("mariadb_server_endpoint", "MariaDB"),
     "APIM": (None, "ApiManagement"),
+    "SEARCH": (None, "Search"),
 }
 # CloudSuffix -> compare-azure-government-global-azure.md endpoint row that must agree with the SDK value
 # in the public and US Gov clouds (the doc has no China column).
 GOV_CROSSCHECK_SUFFIXES = {
     "APIM": "API Management Gateway",
+    "SEARCH": "Azure AI Search",
 }
 # Suffixes no SDK table carries, read from compare-azure-government-global-azure.md: CloudSuffix -> endpoint row.
 # The doc has no China column, so AzureChinaCloud stays unsettled for each.

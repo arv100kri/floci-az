@@ -323,6 +323,51 @@ setup() {
     assert_output --partial "tplcontainer"
 }
 
+# https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/search_service (replica_count, sku, tags)
+# https://learn.microsoft.com/rest/api/searchmanagement/services/get (provisioningState, replicaCount)
+@test "OpenTofu: search service created with Succeeded state, basic sku and its tags" {
+    run arm_get "subscriptions/${SUB_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.Search/searchServices/${SEARCH_NAME}?api-version=2025-05-01"
+    assert_success
+    assert_equal "$(echo "$output" | jq -r '.type')" "Microsoft.Search/searchServices"
+    assert_equal "$(echo "$output" | jq -r '.sku.name')" "basic"
+    assert_equal "$(echo "$output" | jq -r '.properties.provisioningState | ascii_downcase')" "succeeded"
+    assert_equal "$(echo "$output" | jq -r '.properties.replicaCount')" "1"
+    assert_equal "$(echo "$output" | jq -r '.tags.env')" "compat"
+}
+
+# https://learn.microsoft.com/rest/api/searchmanagement/admin-keys/get (POST listAdminKeys returns primaryKey)
+# https://learn.microsoft.com/azure/search/search-security-api-keys (one query key is generated with the service)
+# https://learn.microsoft.com/rest/api/searchservice/indexes/list (an admin api-key lists indexes in a value array)
+@test "OpenTofu: search service keys match the management plane and open its data plane" {
+    cd "$TOFU_DIR"
+    run tofu output -raw search_primary_key
+    assert_success
+    local primary="$output"
+    [ -n "$primary" ]
+
+    run curl -sf -X POST -H "Authorization: Bearer fake" -H "Content-Length: 0" \
+        "${FLOCI_AZ_ENDPOINT}/subscriptions/${SUB_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.Search/searchServices/${SEARCH_NAME}/listAdminKeys?api-version=2025-05-01"
+    assert_success
+    assert_equal "$(echo "$output" | jq -r '.primaryKey')" "$primary"
+
+    run tofu output -json search_query_keys
+    assert_success
+    [ "$(echo "$output" | jq 'length')" -ge 1 ]
+
+    # The data plane is path style at /{service}-search and takes the admin key in the api-key header.
+    run curl -sf -H "api-key: ${primary}" "${FLOCI_AZ_ENDPOINT}/${SEARCH_NAME}-search/indexes?api-version=2026-04-01"
+    assert_success
+    assert_output --partial '"value"'
+}
+
+# https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs/resources/search_service (attributes read back from the service)
+@test "OpenTofu: a plan after apply leaves the search service unchanged" {
+    cd "$TOFU_DIR"
+    run tofu plan -input=false -no-color -detailed-exitcode -target=azurerm_search_service.search
+    assert_success
+    assert_output --partial "No changes"
+}
+
 @test "OpenTofu: mssql server created with its TLS version and connection policy" {
     local server="subscriptions/${SUB_ID}/resourceGroups/${RG_NAME}/providers/Microsoft.Sql/servers/${SQL_NAME}"
     run arm_get "${server}?api-version=2023-08-01-preview"
