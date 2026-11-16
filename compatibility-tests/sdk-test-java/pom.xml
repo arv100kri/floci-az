@@ -130,6 +130,14 @@
             <groupId>com.azure</groupId>
             <artifactId>azure-monitor-query-logs</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.azure</groupId>
+            <artifactId>azure-search-documents</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.azure.resourcemanager</groupId>
+            <artifactId>azure-resourcemanager-search</artifactId>
+        </dependency>
         <!--
           Not in the BOM. 2.57.0 is the release built against azure-core 1.57.0 and
           azure-core-management 1.19.2, the versions pinned above for appcontainers.

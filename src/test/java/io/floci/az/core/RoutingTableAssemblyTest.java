@@ -50,7 +50,8 @@ class RoutingTableAssemblyTest {
         Map.entry(".servicebus.windows.net", "servicebus"),
         Map.entry(".service.signalr.net", "signalr"),
         Map.entry(".azurecontainerapps.io", "containerapps"),
-        Map.entry(".azurecr.io", "acr")
+        Map.entry(".azurecr.io", "acr"),
+        Map.entry(".search.windows.net", "search")
     );
 
     /** A4's ACCOUNT_SUFFIX_ROUTES, verbatim (pre-sort). */
@@ -77,7 +78,8 @@ class RoutingTableAssemblyTest {
         Map.entry("-servicebus", "servicebus"),
         Map.entry("-signalr", "signalr"),
         Map.entry("-apim", "apim"),
-        Map.entry("-email", "email")
+        Map.entry("-email", "email"),
+        Map.entry("-search", "search")
     );
 
     /**

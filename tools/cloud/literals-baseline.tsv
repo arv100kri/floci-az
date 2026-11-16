@@ -31,6 +31,7 @@ src/main/java/io/floci/az/services/network/NetworkService.java	scope-parse	1
 src/main/java/io/floci/az/services/postgres/PostgresHandler.java	scope-parse	3
 src/main/java/io/floci/az/services/queue/QueueServiceHandler.java	cloud-literal	1
 src/main/java/io/floci/az/services/redis/RedisHandler.java	scope-parse	2
+src/main/java/io/floci/az/services/search/SearchHandler.java	cloud-literal	1
 src/main/java/io/floci/az/services/servicebus/ServiceBusHandler.java	cloud-literal	1
 src/main/java/io/floci/az/services/signalr/SignalRHandler.java	cloud-literal	1
 src/main/java/io/floci/az/services/signalr/SignalRWebSockets.java	cloud-literal	3
