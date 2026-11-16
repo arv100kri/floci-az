@@ -2,13 +2,16 @@ package io.floci.az.services.search;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.floci.az.core.Resettable;
+import io.floci.az.services.search.arm.SearchServiceStore;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * The search services this emulator knows, by name: the ones created through {@code Microsoft.Search}, and the ones a
@@ -17,6 +20,11 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Service names are DNS labels, so lookups ignore case. All access goes through methods: callers hold a
  * normal-scoped client proxy.</p>
+ *
+ * <p>The services created through ARM outlive a restart in the {@link SearchServiceStore}; the registry reads them
+ * from it before its first answer, and again after {@link #clear()}, so the data plane accepts their keys from the
+ * first request. A data-plane-only service lives in memory only: it is provisioned again, with the same development
+ * keys, on its next use.</p>
  */
 @ApplicationScoped
 public class SearchServiceRegistry implements Resettable {
@@ -32,9 +40,34 @@ public class SearchServiceRegistry implements Resettable {
 
     private final Map<String, SearchServiceInfo> services = new ConcurrentHashMap<>();
 
+    /** The services created through ARM, as the store keeps them. */
+    private final Supplier<List<SearchServiceInfo>> persisted;
+
+    /** Whether {@link #services} holds the persisted services; reset by {@link #clear()}. */
+    private volatile boolean loaded;
+
+    /** The registry over the services the {@link SearchServiceStore} keeps across restarts. */
+    @Inject
+    public SearchServiceRegistry(SearchServiceStore store) {
+        this(store::serviceInfos);
+    }
+
+    /** A registry with no persisted services, for a test that builds one directly. */
+    public SearchServiceRegistry() {
+        this(List::of);
+    }
+
+    SearchServiceRegistry(Supplier<List<SearchServiceInfo>> persisted) {
+        this.persisted = persisted;
+    }
+
     /** The service named {@code name}, if it was created through ARM or provisioned by an earlier request. */
     public Optional<SearchServiceInfo> find(String name) {
-        return name == null ? Optional.empty() : Optional.ofNullable(services.get(key(name)));
+        if (name == null) {
+            return Optional.empty();
+        }
+        load();
+        return Optional.ofNullable(services.get(key(name)));
     }
 
     /**
@@ -42,22 +75,47 @@ public class SearchServiceRegistry implements Resettable {
      * exists, the way the other floci-az data planes serve an account they were never told about.
      */
     public SearchServiceInfo findOrProvision(String name) {
+        load();
         return services.computeIfAbsent(key(name), SearchServiceRegistry::dataPlaneOnly);
     }
 
     /** Records a service, replacing any earlier record of the same name. */
     public void put(SearchServiceInfo service) {
+        load();
         services.put(key(service.name()), service);
     }
 
     /** Forgets the service named {@code name}; returns it, or empty when there was none. */
     public Optional<SearchServiceInfo> remove(String name) {
-        return name == null ? Optional.empty() : Optional.ofNullable(services.remove(key(name)));
+        if (name == null) {
+            return Optional.empty();
+        }
+        load();
+        return Optional.ofNullable(services.remove(key(name)));
     }
 
     @Override
-    public void clear() {
+    public synchronized void clear() {
         services.clear();
+        loaded = false;
+    }
+
+    /**
+     * Reads the persisted services in once, replacing a data-plane-only service of the same name. A write waits for
+     * a load in progress, so a load that read the store before the write can never overwrite it afterwards.
+     */
+    private void load() {
+        if (loaded) {
+            return;
+        }
+        synchronized (this) {
+            if (!loaded) {
+                for (SearchServiceInfo service : persisted.get()) {
+                    services.put(key(service.name()), service);
+                }
+                loaded = true;
+            }
+        }
     }
 
     private static SearchServiceInfo dataPlaneOnly(String name) {

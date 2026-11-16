@@ -13,6 +13,7 @@ Tests are [bats](https://github.com/bats-core/bats-core) scripts that call `az` 
 | `keyvault`          | Vault create, secret set/show data-plane             |
 | `network-vm`        | Virtual network, NIC (VM create best-effort)         |
 | `acr-redis`         | Container Registry, Redis cache                      |
+| `search`            | AI Search service, admin keys, query keys            |
 
 ## Requirements
 

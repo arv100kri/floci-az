@@ -247,6 +247,37 @@ output "acr_login_server" {
   value = azurerm_container_registry.acr.login_server
 }
 
+# ── Azure AI Search ──────────────────────────────────────────────────────────
+# azurerm reads the service, its admin keys (listAdminKeys) and its query keys (listQueryKeys) on every refresh, so
+# all three must answer for the plan after apply to be empty. The name has no dashes, so the service's path-style
+# data plane, /{name}-search, is unambiguous.
+
+resource "azurerm_search_service" "search" {
+  name                = "flocitestsearch"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  sku                 = "basic"
+  replica_count       = 1
+
+  tags = {
+    env = "compat"
+  }
+}
+
+output "search_service_id" {
+  value = azurerm_search_service.search.id
+}
+
+output "search_primary_key" {
+  value     = azurerm_search_service.search.primary_key
+  sensitive = true
+}
+
+output "search_query_keys" {
+  value     = azurerm_search_service.search.query_keys
+  sensitive = true
+}
+
 # ── Network type synthesis: NSG / Load Balancer / Application Gateway ────────
 
 resource "azurerm_network_security_group" "nsg" {

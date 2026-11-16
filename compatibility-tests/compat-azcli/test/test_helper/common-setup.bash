@@ -32,6 +32,9 @@ export NIC_NAME="floci-test-nic"
 export VM_NAME="floci-test-vm"
 export ACR_NAME="flocitestacr"
 export REDIS_NAME="floci-test-redis"
+# No dashes, so the service's path-style data plane, /{name}-search, is unambiguous.
+export SEARCH_NAME="flocitestsearch"
+export SEARCH_QUERY_KEY_NAME="floci-test-query-key"
 
 # Dev storage key (well-known Azurite key floci-az accepts) — used to build a
 # data-plane connection string, mirroring azfloci/azfloci.py.

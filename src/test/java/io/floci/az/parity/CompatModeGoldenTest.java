@@ -106,6 +106,7 @@ class CompatModeGoldenTest {
         // azurerm_resource_provider_registration reads as a nil registrationState; both now answer every served
         // namespace Registered, with its resource types and Azure's api-versions.
         // Fix (deployments, arm-deployments Phase 1): Microsoft.Resources also lists deployments, now served.
+        // Fix (search, Azure AI Search): Microsoft.Search is a served namespace, so the list names it too.
         script.step("providers list", given(), "GET", sub + "/providers" + ARM_API);
         script.step("provider get, Microsoft.Storage", given(), "GET",
             sub + "/providers/Microsoft.Storage" + ARM_API);
