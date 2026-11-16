@@ -167,7 +167,12 @@ describe("search-query: Lucene syntax, facets, suggestions, synonyms, scoring, a
       await eventually(async () => {
         expect(await searchKeys(client, "canine")).toEqual(["dog"]);
       });
-      expect(await searchKeys(client, "Washington")).toEqual(["wa"]);
+      // Scoped to the synonym-enabled field: "id" is searchable too ("Fields of type Edm.String or
+      // Collection(Edm.String) are searchable by default", https://learn.microsoft.com/rest/api/searchservice/indexes/create)
+      // and synonyms apply "only for fields that have a synonym assignment"
+      // (https://learn.microsoft.com/azure/search/search-synonyms), so an unscoped query also matches the key
+      // "washington" through the id field.
+      expect(await searchKeys(client, "Washington", { searchFields: ["description"] })).toEqual(["wa"]);
     } finally {
       await deleteIndexQuietly(indexes, indexName);
       await indexes.deleteSynonymMap(mapName).catch(() => undefined);

@@ -101,7 +101,7 @@ class SearchRoutingTest {
 
     @Test
     void featuresNotEmulatedYetAnswer501() {
-        admin().get("/svc-search/synonymmaps" + API).then().statusCode(501)
+        admin().get("/svc-search/knowledgesources" + API).then().statusCode(501)
             .body("error.code", equalTo("NotImplemented"));
         admin().get("/svc-search/indexers('x')/search.status" + API).then().statusCode(501)
             .body("error.code", equalTo("NotImplemented"));

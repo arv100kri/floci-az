@@ -1,0 +1,52 @@
+# Stop words of the th.microsoft analyzer, as Microsoft publishes them in "Stopwords reference (Microsoft analyzers)":
+# https://github.com/MicrosoftDocs/azure-docs/blob/d0fa0fdcf7/articles/search/reference-stopwords.md
+# (c) Microsoft Corporation. Licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0):
+# https://creativecommons.org/licenses/by/4.0/
+# Changes: the list was extracted into one word per line, entries listing several space-separated characters were
+# split into one line per character, and repeated entries were dropped.
+นะ
+ครับ
+ค่ะ
+ละ
+ฮะ
+ฮิ
+จ๊ะ
+วะ
+มั๊ย
+สิ
+เออ
+ฮึ
+ซิ
+นะจ๊ะ
+นะค่ะ
+เถอะ
+เถอะนะ
+เถอะน่า
+หรอก
+อุ๊ย
+อ่า
+ซะ
+หนิ
+หนะ
+หน่า
+นิ
+แหละ
+จ๊อกๆ
+ติ๋งๆ
+เหรอะ
+บรึม
+อึ๋ย
+แหนะ
+เฮ้ย
+โว้ย
+โอย
+เจี๊ยก
+หร๊อก
+บ๊ะ
+แน่ะ
+โอ
+แฮ้
+เหม่
+เอ๊ะ
+แฮ
+แฮะ

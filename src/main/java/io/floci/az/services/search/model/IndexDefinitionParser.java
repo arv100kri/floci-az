@@ -166,6 +166,7 @@ public final class IndexDefinitionParser {
         validateNamedComponents(output, "tokenFilters");
         validateNamedComponents(output, "charFilters");
         PermissionFilterValidator.validate(output, fields);
+        catalog.validateAnalysis(output);
         return new SearchIndexDefinition(name, output, fields, keys.get(0), number(similarity.get("k1")),
             number(similarity.get("b")));
     }

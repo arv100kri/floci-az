@@ -29,10 +29,12 @@ import java.util.Optional;
 public class IndexesController {
 
     private final SearchEngine engine;
+    private final AliasesController aliases;
 
     @Inject
-    public IndexesController(SearchEngine engine) {
+    public IndexesController(SearchEngine engine, AliasesController aliases) {
         this.engine = engine;
+        this.aliases = aliases;
     }
 
     public Response list(SearchCall call) {
@@ -81,7 +83,7 @@ public class IndexesController {
     }
 
     public Response createOrUpdate(SearchCall call) {
-        String name = call.path("index");
+        String name = aliases.indexNameFor(call.serviceName(), call.path("index"));
         ServiceIndexes indexes = engine.service(call.serviceName());
         synchronized (indexes) {
             Optional<LiveIndex> existing = indexes.find(name);
@@ -115,6 +117,7 @@ public class IndexesController {
             if (existing.isEmpty()) {
                 throw notFound(call, name);
             }
+            aliases.checkIndexDeletable(call.serviceName(), name);
             indexes.delete(name);
             return Response.noContent().build();
         }
@@ -176,8 +179,8 @@ public class IndexesController {
     }
 
     private LiveIndex require(SearchCall call) {
-        String name = call.path("index");
-        return engine.service(call.serviceName()).find(name).orElseThrow(() -> notFound(call, name));
+        String name = aliases.indexNameFor(call.serviceName(), call.path("index"));
+        return engine.service(call.serviceName()).find(name).orElseThrow(() -> notFound(call, call.path("index")));
     }
 
     static SearchException notFound(SearchCall call, String name) {

@@ -167,7 +167,13 @@ def test_synonym_maps_expand_queries_on_assigned_fields(service, index_client):
 
         eventually(lambda: _assert_equal(search_keys(client, "canine"), ["dog"]))
         assert search_keys(client, "puppy") == ["dog"]
-        assert search_keys(client, "Washington") == ["wa"], "the explicit mapping rewrites the query to WA only"
+        # Scoped to the synonym-enabled field: "id" is searchable too ("Fields of type Edm.String or
+        # Collection(Edm.String) are searchable by default", https://learn.microsoft.com/rest/api/searchservice/indexes/create)
+        # and synonyms apply "only for fields that have a synonym assignment"
+        # (https://learn.microsoft.com/azure/search/search-synonyms), so an unscoped query also matches the key
+        # "washington" through the id field.
+        assert search_keys(client, "Washington", search_fields=["description"]) == ["wa"], \
+            "the explicit mapping rewrites the query to WA only"
         assert search_keys(client, "monument") == ["washington"]
 
         index_client.delete_synonym_map(map_name)
