@@ -31,8 +31,8 @@ VISIBILITY_TIMEOUT = 15
 # Reference point for the geo tests: downtown Seattle, longitude first as in OData POINT(lon lat).
 SEATTLE = "geography'POINT(-122.335 47.608)'"
 
-COLLECTION_OF_STRINGS = f"Collection({SearchFieldDataType.STRING})"
-COLLECTION_OF_SINGLES = f"Collection({SearchFieldDataType.SINGLE})"
+COLLECTION_OF_STRINGS = f"Collection({SearchFieldDataType.STRING.value})"
+COLLECTION_OF_SINGLES = f"Collection({SearchFieldDataType.SINGLE.value})"
 
 
 def service_name(prefix):

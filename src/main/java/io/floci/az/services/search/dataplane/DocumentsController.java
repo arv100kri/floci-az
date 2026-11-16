@@ -30,11 +30,14 @@ public class DocumentsController {
 
     private final SearchEngine engine;
     private final DocumentIndexResolver indexes;
+    private final SemanticRankerAvailability semanticRanker;
 
     @Inject
-    public DocumentsController(SearchEngine engine, DocumentIndexResolver indexes) {
+    public DocumentsController(SearchEngine engine, DocumentIndexResolver indexes,
+                               SemanticRankerAvailability semanticRanker) {
         this.engine = engine;
         this.indexes = indexes;
+        this.semanticRanker = semanticRanker;
     }
 
     public Response searchGet(SearchCall call) {
@@ -47,6 +50,7 @@ public class DocumentsController {
 
     private Response search(SearchCall call, SearchRequest request, boolean get) {
         LiveIndex index = indexes.resolve(call);
+        semanticRanker.requireAvailable(call, request);
         SearchOutcome outcome = engine.search(index, request);
         Response.ResponseBuilder response = SearchResponses.jsonBuilder(call, 200,
             SearchResponseWriter.write(call, index.name(), outcome, get));

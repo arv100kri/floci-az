@@ -157,6 +157,7 @@ public final class IndexDefinitionParser {
         validateScoringProfiles(output);
         validateSuggesters(output, skeleton);
         validateCors(output.get("corsOptions"));
+        output.set("semantic", SemanticDefinitionValidator.validate(output.get("semantic"), skeleton));
         validateNamedComponents(output, "analyzers");
         validateNamedComponents(output, "normalizers");
         validateNamedComponents(output, "tokenizers");

@@ -237,7 +237,7 @@ class SearchQueryTest {
     void featuresOfLaterStagesAreClearlyMarked() {
         search("{\"search\": \"hotel\", \"queryType\": \"full\"}").statusCode(501)
             .body("error.code", equalTo("NotImplemented"));
-        search("{\"search\": \"hotel\", \"queryType\": \"semantic\"}").statusCode(501);
+        search("{\"search\": \"hotel\", \"queryType\": \"semantic\"}").statusCode(400);
         search("{\"search\": \"hotel\", \"scoringProfile\": \"missing\"}").statusCode(400);
         search("{\"search\": \"hotel\", \"facets\": [\"Category,count:5\"]}").statusCode(200)
             .body("'@search.facets'.Category", empty());

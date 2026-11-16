@@ -51,9 +51,8 @@ public final class SortAndPageStage implements SearchStage {
                 order = order.thenComparing(byScore);
             }
         } else if (execution.rankedByReranker()) {
-            Comparator<SearchHit> byReranker = Comparator.comparingDouble(
-                (SearchHit hit) -> hit.rerankerScore() == null ? Double.NEGATIVE_INFINITY : hit.rerankerScore())
-                .reversed();
+            Comparator<SearchHit> byReranker = Comparator.comparingDouble((SearchHit hit) ->
+                hit.semanticRankingScore() == null ? Double.NEGATIVE_INFINITY : hit.semanticRankingScore()).reversed();
             order = byReranker.thenComparing(byScore);
         } else {
             order = byScore;
