@@ -136,6 +136,16 @@ class SearchIdentityTest {
     }
 
     @Test
+    void theChallengeNamesTheSearchAudienceOfTheCloudTheRequestAddresses() {
+        given().header("Host", "govsvc.search.azure.us").get("/indexes" + API).then().statusCode(401)
+            .header("WWW-Authenticate", containsString("resource=\"https://search.azure.us\""));
+        given().header("Host", "chinasvc.search.azure.cn").get("/indexes" + API).then().statusCode(401)
+            .header("WWW-Authenticate", containsString("resource=\"https://search.azure.cn\""));
+        given().header("Host", "publicsvc.search.windows.net").get("/indexes" + API).then().statusCode(401)
+            .header("WWW-Authenticate", containsString("resource=\"https://search.azure.com\""));
+    }
+
+    @Test
     void aSignedTokenForAnotherAudienceIsAcceptedWhileTokensAreNotValidated() {
         given().auth().oauth2(SearchIdentityFixtures.appToken("https://vault.azure.net/.default"))
             .get("/lenient-search/indexes" + API).then().statusCode(200);

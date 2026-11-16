@@ -12,12 +12,19 @@ import java.util.List;
 public interface SkillsetRunner {
 
     /**
+     * The node of the {@code /document} the indexer passes, {@code /document/AzureSearch_DocumentKey}, that holds the
+     * document's key: index projections write it to their {@code parentKeyFieldName} and build projected keys from it.
+     */
+    String DOCUMENT_KEY_NODE = "AzureSearch_DocumentKey";
+
+    /**
      * Enriches one document.
      *
      * @param serviceName         the search service the indexer belongs to
      * @param skillset            the skillset definition as stored
      * @param document            the enrichment tree's {@code /document} node, built from the cracked source document
-     *                            after field mappings; implementations may add to it
+     *                            after field mappings, with the document key in {@link #DOCUMENT_KEY_NODE};
+     *                            implementations may add to it
      * @param outputFieldMappings the indexer's {@code outputFieldMappings}, possibly empty
      * @return what the indexer writes: fields for the source document's index entry, projected documents, and the
      *     warnings and errors to report

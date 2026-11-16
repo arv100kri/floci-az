@@ -65,7 +65,7 @@ class SearchAuthTest {
     }
 
     @Test
-    void anUnknownKeyIsAcceptedAsAnAdminKeyOutsideStrictParity() {
+    void anUnknownKeyActsAsAnAdminKeyOnAServiceADataPlaneRequestProvisioned() {
         given().header("api-key", "not-a-key-of-this-service").get(BASE + "/indexes" + API).then().statusCode(200);
     }
 
@@ -96,8 +96,10 @@ class SearchAuthTest {
         given().header("api-key", "primary-admin").contentType("application/json").body(INDEX)
             .post("/armsvc-search/indexes" + API).then().statusCode(201);
         given().header("api-key", "query-1").get("/armsvc-search/indexes" + API).then().statusCode(403);
-        given().header("api-key", SearchServiceRegistry.DEV_QUERY_KEY).get("/armsvc-search/indexes" + API)
-            .then().statusCode(200);
+        given().header("api-key", SearchServiceRegistry.DEV_PRIMARY_ADMIN_KEY).get("/armsvc-search/indexes" + API)
+            .then().statusCode(403).body("error.code", equalTo("Forbidden"));
+        given().header("api-key", "not-a-key-of-this-service").contentType("application/json").body("{}")
+            .post("/armsvc-search/indexes('docs')/docs/search.post.search" + API).then().statusCode(403);
     }
 
     @Test

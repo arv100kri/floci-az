@@ -1,6 +1,7 @@
 package io.floci.az.services.search.engine.pipeline;
 
 import io.floci.az.services.search.engine.analysis.IndexAnalysis;
+import io.floci.az.services.search.engine.analysis.SynonymExpansion;
 import io.floci.az.services.search.engine.analysis.Token;
 import io.floci.az.services.search.engine.index.DocumentValues;
 import io.floci.az.services.search.engine.index.IndexedDocument;
@@ -27,7 +28,9 @@ import java.util.regex.Pattern;
  * terms are wrapped in {@code highlightPreTag} and {@code highlightPostTag} ({@code <em>} and {@code </em>} by default,
  * set together or not at all). Each result on the page gets {@code @search.highlights} for the fields where the query
  * matched something (see {@link QueryTermMatcher} and {@link HighlightFragments}); a query matching everything
- * highlights nothing.
+ * highlights nothing. The query is matched after {@link SynonymExpansion}, as retrieval runs it: per Learn's "Add
+ * synonyms", the expansion rewrites the query with OR, so "hit highlighting and scoring profiles treat the original
+ * term and synonyms as equivalent".
  */
 public final class HighlightStage implements SearchStage {
 
@@ -54,8 +57,8 @@ public final class HighlightStage implements SearchStage {
         if (request.matchesAllText() || execution.page().isEmpty()) {
             return;
         }
-        QueryNode query = QueryParsers.forType(request.effectiveQueryType())
-            .parse(request.search(), request.effectiveSearchMode());
+        QueryNode query = SynonymExpansion.expand(QueryParsers.forType(request.effectiveQueryType())
+            .parse(request.search(), request.effectiveSearchMode()), index, execution.searchFields());
         QueryTermMatcher matcher = new QueryTermMatcher(query, index.analysis(), execution.searchFields());
         for (SearchHit hit : execution.page()) {
             Map<String, List<String>> highlights = highlight(index.document(hit.ordinal()), targets, matcher,

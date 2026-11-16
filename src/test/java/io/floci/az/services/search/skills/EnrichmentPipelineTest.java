@@ -3,6 +3,7 @@ package io.floci.az.services.search.skills;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.floci.az.services.search.indexer.MappingFunctions;
 import io.floci.az.services.search.indexer.SkillsetRunner.EnrichmentResult;
 import io.floci.az.services.search.indexer.SkillsetRunner.ProjectedDocument;
 import io.floci.az.services.search.model.SearchJson;
@@ -320,7 +321,7 @@ class EnrichmentPipelineTest {
         assertThat(fields.get("tags").toString(), equalTo("[\"red\",\"blue\"]"));
         assertThat(fields.get("url").asText(), equalTo("%3chello%3e"));
         assertThat(fields.get("descriptions").toString(), equalTo("[\"A\",\"B\"]"));
-        assertThat(fields.get("fixed").asText(), matchesPattern("[0-9a-f]{64}"));
+        assertThat(fields.get("fixed").asText(), equalTo(MappingFunctions.fixedLengthEncode("<hello>")));
         assertThat(fields.get("json").toString(), equalTo("{\"a\":1}"));
     }
 

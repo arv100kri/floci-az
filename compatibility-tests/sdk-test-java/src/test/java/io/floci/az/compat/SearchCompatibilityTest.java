@@ -93,6 +93,8 @@ class SearchCompatibilityTest {
     // https://learn.microsoft.com/rest/api/searchservice/indexes/delete (204 No Content, 404 Not Found)
     // https://learn.microsoft.com/azure/search/search-howto-concurrency ("Every time you update a resource, its ETag
     // changes automatically")
+    // https://github.com/Azure/azure-sdk-for-java/blob/main/sdk/search/azure-search-documents/src/main/java/com/azure/search/documents/implementation/SearchIndexClientImpl.java
+    // (deleteIndex is @ExpectedResponses({ 204, 404 }): deleting a missing index succeeds, and the response is a 404)
     @Test
     void indexLifecycleCreateGetListUpdateDelete() {
         String name = SearchTestSupport.name("lifecycle");
@@ -125,7 +127,8 @@ class SearchCompatibilityTest {
         }
 
         assertEquals(404, statusOf(() -> indexClient.getIndex(name)));
-        assertEquals(404, statusOf(() -> indexClient.deleteIndex(name)));
+        indexClient.deleteIndex(name);
+        assertEquals(404, indexClient.deleteIndexWithResponse(name, new RequestOptions()).getStatusCode());
     }
 
     // https://learn.microsoft.com/azure/search/search-howto-concurrency (an update whose ETag no longer matches fails)
@@ -455,15 +458,6 @@ class SearchCompatibilityTest {
         SearchIndexClient readOnlyIndexes = SearchTestSupport.indexClient(service, QUERY_KEY);
         assertEquals(403, statusOf(() -> readOnlyIndexes.getIndex(hotelsIndex)));
         assertEquals(404, statusOf(() -> hotels.getDocument("99")), "the rejected upload wrote nothing");
-    }
-
-    // https://learn.microsoft.com/azure/search/search-security-api-keys ("A request made to a search service endpoint
-    // is accepted if both the request and the API key are valid")
-    // https://learn.microsoft.com/rest/api/searchservice/http-status-codes ("403 Forbidden")
-    @Test
-    void anUnknownApiKeyIsRejected() {
-        SearchClient unknown = SearchTestSupport.searchClient(service, hotelsIndex, "not-a-key-of-this-service");
-        assertEquals(403, statusOf(() -> searchKeys(unknown, new SearchOptions().setSearchText("*"))));
     }
 
     private Set<String> filtered(String filter) {

@@ -126,6 +126,7 @@ Rule: copy an existing service pattern before introducing a new one.
 | Azure Functions | HTTP REST | `/{account}-functions/` | ZIP deploy, HTTP trigger invoke |
 | App Configuration | Azure App Config REST | `/{account}-appconfig/` | JSON, ETags, labels |
 | Key Vault | Azure Key Vault REST | `/{account}-keyvault/` | JSON, Bearer auth challenge |
+| Azure AI Search | Azure AI Search REST (data plane) | `/{service}-search/` | JSON (OData), `api-key` header or Bearer token, `api-version` required; also `{service}.search.windows.net`. In-process engine |
 | Event Hubs | AMQP 1.0 (Artemis) | port 5672 | Direct sidecar, not proxied through 4577 |
 | Event Hubs Kafka | Kafka (Redpanda) | port 9093 | Optional, direct sidecar |
 

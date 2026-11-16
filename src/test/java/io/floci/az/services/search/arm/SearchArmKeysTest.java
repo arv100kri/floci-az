@@ -40,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SearchArmKeysTest {
 
     private static final String KEY = "[A-Za-z0-9]{52}";
+    private static final String DATA_API = "?api-version=2024-07-01";
 
     @Inject
     SearchServiceRegistry registry;
@@ -150,6 +151,12 @@ class SearchArmKeysTest {
         assertTrue(info.isAdminKey(secondary.get("secondaryKey")));
         assertFalse(info.isAdminKey(before.get("primaryKey")));
         assertFalse(info.isAdminKey(before.get("secondaryKey")));
+        given().header("api-key", secondary.get("primaryKey")).get("/keys-regen-search/indexes" + DATA_API).then()
+            .statusCode(200);
+        given().header("api-key", before.get("primaryKey")).get("/keys-regen-search/indexes" + DATA_API).then()
+            .statusCode(403).body("error.code", equalTo("Forbidden"));
+        given().header("api-key", SearchServiceRegistry.DEV_PRIMARY_ADMIN_KEY).get("/keys-regen-search/indexes"
+            + DATA_API).then().statusCode(403);
 
         given().when().post(path + "/regenerateAdminKey/tertiary" + API).then().statusCode(400)
             .body("error.code", equalTo("BadRequest"));

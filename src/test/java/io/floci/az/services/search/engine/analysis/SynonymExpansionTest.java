@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.is;
@@ -102,6 +103,28 @@ class SynonymExpansionTest {
     @Test
     void prefixQueriesAreNotExpanded() {
         assertThat(search("pupp*"), empty());
+    }
+
+    @Test
+    void highlightsCoverTheTermsMatchedThroughSynonyms() {
+        Map<String, Map<String, List<String>>> canine = highlights("canine");
+        assertThat(canine.get("dog"), is(Map.of("text", List.of("a friendly <em>dog</em>"))));
+        assertThat(canine.get("dogs"), is(Map.of("text", List.of("<em>dog</em> sitting"),
+            "plain", List.of("<em>canine</em>"))));
+        assertThat(highlights("USA").get("states").get("text"),
+            contains("the <em>United</em> <em>States</em> <em>of</em> <em>America</em>"));
+        Map<String, Map<String, List<String>>> washington = highlights("Washington");
+        assertThat(washington.get("wa"), is(Map.of("text", List.of("hiking in <em>WA</em>"))));
+        assertThat(washington.get("washington"), is(Map.of("plain", List.of("<em>Washington</em>"))));
+    }
+
+    private Map<String, Map<String, List<String>>> highlights(String text) {
+        SearchOutcome outcome = SearchPipeline.standard().run(index(), SearchRequest.builder().search(text)
+            .highlightFields(List.of("text", "plain")).build(), EngineSettings.DEFAULTS);
+        Map<String, Map<String, List<String>>> byKey = new HashMap<>();
+        outcome.results().forEach(result -> byKey.put(result.document().get("id").asText(),
+            result.hit().highlights()));
+        return byKey;
     }
 
     @Test

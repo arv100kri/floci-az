@@ -248,6 +248,46 @@ class SearchIndexesTest {
     }
 
     @Test
+    void analysisComponentsAreAddedWithDowntimeAndNeverChanged() {
+        String index = """
+            {"name": "notes", "fields": [
+              {"name": "id", "type": "Edm.String", "key": true},
+              {"name": "body", "type": "Edm.String", "searchable": true, "analyzer": "folding"}],
+             "analyzers": [{"name": "folding", "@odata.type": "#Microsoft.Azure.Search.CustomAnalyzer",
+               "tokenizer": "standard_v2", "tokenFilters": ["lowercase"], "charFilters": ["no_dashes"]}%s],
+             "charFilters": [{"name": "no_dashes", "@odata.type": "#Microsoft.Azure.Search.MappingCharFilter",
+               "mappings": [%s]}]%s}
+            """;
+        String second = ", {\"name\": \"plain\", \"@odata.type\": \"#Microsoft.Azure.Search.CustomAnalyzer\", "
+            + "\"tokenizer\": \"whitespace\"}";
+        String downtime = "/indexes('notes')?api-version=2024-07-01&allowIndexDowntime=true";
+        admin().body(index.formatted("", "\"-=>\"", "")).post(BASE + "/indexes" + API).then().statusCode(201);
+        admin().body(index.formatted("", "\"-=>\"", "")).put(BASE + "/indexes('notes')" + API).then().statusCode(204);
+
+        admin().body(index.formatted(second, "\"-=>\"", "")).put(BASE + "/indexes('notes')" + API).then()
+            .statusCode(400)
+            .body("error.message", startsWith("Index update not allowed because it would cause downtime."));
+        admin().body(index.formatted(second, "\"-=>\"", "")).put(BASE + downtime).then().statusCode(204);
+        admin().get(BASE + "/indexes('notes')" + API).then().statusCode(200)
+            .body("analyzers.name", contains("folding", "plain"));
+
+        admin().body(index.formatted(second, "\"-=>_\"", "")).put(BASE + downtime).then().statusCode(400)
+            .body("error.message", containsString("the existing char filter 'no_dashes' cannot be modified"));
+        admin().body(index.formatted("", "\"-=>\"", "")).put(BASE + downtime).then().statusCode(400)
+            .body("error.message", containsString("the existing analyzer 'plain' cannot be deleted"));
+        admin().body(index.formatted(second.replace("whitespace", "keyword_v2"), "\"-=>\"", ""))
+            .put(BASE + "/indexes('notes')" + API).then().statusCode(400)
+            .body("error.message", containsString("the existing analyzer 'plain' cannot be modified"));
+
+        String normalizer = ", \"normalizers\": [{\"name\": \"upper\", \"@odata.type\": "
+            + "\"#Microsoft.Azure.Search.CustomNormalizer\", \"tokenFilters\": [\"uppercase\"]}]";
+        admin().body(index.formatted(second, "\"-=>\"", normalizer)).put(BASE + "/indexes('notes')" + API).then()
+            .statusCode(400)
+            .body("error.message", startsWith("Index update not allowed because it would cause downtime."));
+        admin().body(index.formatted(second, "\"-=>\"", normalizer)).put(BASE + downtime).then().statusCode(204);
+    }
+
+    @Test
     void statisticsCountDocumentsAndIndexes() {
         createHotels();
         admin().body("{\"value\":[{\"HotelId\":\"1\",\"HotelName\":\"A\"},{\"HotelId\":\"2\",\"HotelName\":\"B\"}]}")

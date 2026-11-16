@@ -47,7 +47,7 @@ import java.util.Map;
  * an Azure host uses the model endpoint when one is set (text queries) and otherwise fails as an unreachable
  * endpoint, with the error Azure answers a failed vectorization with.
  */
-public final class VectorizerClient {
+public final class VectorizerClient implements AutoCloseable {
 
     private static final Logger LOG = Logger.getLogger(VectorizerClient.class);
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
@@ -56,15 +56,48 @@ public final class VectorizerClient {
     private static final String FAILED = "Could not complete vectorization action. ";
     private static final String UNREACHABLE = FAILED + "Could not reach the vectorization endpoint.";
 
-    private final HttpClient http;
+    private volatile HttpClient http;
+
+    /**
+     * A client that builds its HTTP client on its first vectorizer call, so a client that never calls one starts no
+     * thread. Its owner closes it.
+     */
+    public VectorizerClient() {
+        this(null);
+    }
 
     public VectorizerClient(HttpClient http) {
         this.http = http;
     }
 
-    /** The client the engine uses: one HTTP client for every vectorizer call. */
-    public static VectorizerClient shared() {
-        return Shared.INSTANCE;
+    /**
+     * Stops the HTTP client's threads. The selector thread of an HTTP client still in use holds the context class
+     * loader it was started with, so a client the application never stops keeps that application's classes loaded.
+     */
+    @Override
+    public void close() {
+        HttpClient client = http;
+        if (client != null) {
+            client.shutdownNow();
+        }
+    }
+
+    private HttpClient http() {
+        HttpClient client = http;
+        if (client == null) {
+            synchronized (this) {
+                client = http;
+                if (client == null) {
+                    client = HttpClient.newBuilder()
+                        .connectTimeout(CONNECT_TIMEOUT)
+                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .build();
+                    http = client;
+                }
+            }
+        }
+        return client;
     }
 
     /**
@@ -220,7 +253,7 @@ public final class VectorizerClient {
                 .header("Accept", "application/json")
                 .method(method, HttpRequest.BodyPublishers.ofString(SearchJson.write(body), StandardCharsets.UTF_8));
             headers.forEach(request::header);
-            response = http.send(request.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            response = http().send(request.build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (IOException | IllegalArgumentException e) {
             LOG.debugv("Vectorizer endpoint {0} could not be reached: {1}", target, e.toString());
             throw failure(UNREACHABLE);
@@ -382,13 +415,5 @@ public final class VectorizerClient {
             case 504 -> "GatewayTimeout";
             default -> String.valueOf(status);
         };
-    }
-
-    private static final class Shared {
-        private static final VectorizerClient INSTANCE = new VectorizerClient(HttpClient.newBuilder()
-            .connectTimeout(CONNECT_TIMEOUT)
-            .followRedirects(HttpClient.Redirect.NEVER)
-            .version(HttpClient.Version.HTTP_1_1)
-            .build());
     }
 }

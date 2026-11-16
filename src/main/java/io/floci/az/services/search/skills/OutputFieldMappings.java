@@ -51,7 +51,7 @@ final class OutputFieldMappings {
             JsonNode function = mapping.get("mappingFunction");
             if (function != null && function.isObject()) {
                 try {
-                    mapped = MappingFunctions.apply(function, mapped);
+                    mapped = OutputMappingFunctions.apply(function, mapped);
                 } catch (IllegalArgumentException e) {
                     messages.error(operation(target), "Could not map output field '" + target + "' to search index "
                         + "due to deserialization problem while applying mapping function '"

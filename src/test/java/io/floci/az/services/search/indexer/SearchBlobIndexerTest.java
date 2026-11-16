@@ -11,6 +11,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static io.floci.az.services.search.indexer.IndexerTestSupport.API;
@@ -333,6 +334,84 @@ class SearchBlobIndexerTest {
         assertEquals(1, run.getInt("itemsProcessed"));
         assertEquals(List.of("kept"), searchAll(SERVICE, "soft").stream().map(document -> document.get("content"))
             .toList());
+    }
+
+    @Test
+    void indexProjectionsFollowTheirParentsContentAndDeletion() {
+        putBlob(CONTAINER, "a.txt", "The keeper lit the lamp. The ship saw the light. The crew cheered.",
+            Map.of("IsDeleted", "false"));
+        putBlob(CONTAINER, "b.txt", "Gulls circled the pier. Fog rolled in.", Map.of("IsDeleted", "false"));
+        createIndex(SERVICE, """
+            {"name": "chunks", "fields": [
+              {"name": "chunk_id", "type": "Edm.String", "key": true, "analyzer": "keyword"},
+              {"name": "parent_id", "type": "Edm.String", "filterable": true},
+              {"name": "chunk", "type": "Edm.String", "searchable": true}]}
+            """);
+        createIndex(SERVICE, "{\"name\": \"parents\", \"fields\": [{\"name\": \"id\", \"type\": \"Edm.String\", "
+            + "\"key\": true}, {\"name\": \"content\", \"type\": \"Edm.String\"}]}");
+        createDataSource(SERVICE, "{\"name\": \"chunks-ds\", \"type\": \"azureblob\", \"credentials\": "
+            + "{\"connectionString\": \"" + BLOB_CONNECTION + "\"}, \"container\": {\"name\": \"" + CONTAINER + "\"}, "
+            + "\"dataDeletionDetectionPolicy\": {\"@odata.type\": "
+            + "\"#Microsoft.Azure.Search.SoftDeleteColumnDeletionDetectionPolicy\", \"softDeleteColumnName\": "
+            + "\"IsDeleted\", \"softDeleteMarkerValue\": \"true\"}}");
+        admin().body("""
+            {"name": "chunker", "skills": [
+              {"@odata.type": "#Microsoft.Skills.Text.SplitSkill", "textSplitMode": "sentences",
+               "inputs": [{"name": "text", "source": "/document/content"}],
+               "outputs": [{"name": "textItems", "targetName": "pages"}]}],
+             "indexProjections": {"selectors": [{"targetIndexName": "chunks", "parentKeyFieldName": "parent_id",
+               "sourceContext": "/document/pages/*", "mappings": [{"name": "chunk", "source": "/document/pages/*"}]}]}}
+            """).post(base(SERVICE) + "/skillsets" + API).then().statusCode(201);
+        createIndexer(SERVICE, "{\"name\": \"chunks-indexer\", \"dataSourceName\": \"chunks-ds\", "
+            + "\"targetIndexName\": \"parents\", \"skillsetName\": \"chunker\"}");
+
+        JsonPath first = awaitRun(SERVICE, "chunks-indexer", 0);
+        assertEquals("success", first.getString("status"), first.prettify());
+        Map<String, Set<String>> initial = chunksByParent();
+        assertEquals(2, initial.size());
+        String parentA = parentOf(initial, "a.txt");
+        String parentB = parentOf(initial, "b.txt");
+        assertEquals(Set.of(parentA, parentB), searchAll(SERVICE, "parents").stream()
+            .map(parent -> (String) parent.get("id")).collect(Collectors.toSet()),
+            "the parent key is the document key");
+        assertEquals(3, initial.get(parentA).size(), "one chunk per sentence: " + initial);
+        assertEquals(2, initial.get(parentB).size());
+        for (String chunk : initial.get(parentA)) {
+            assertTrue(chunk.matches("[0-9a-f]{12}_" + Pattern.quote(parentA) + "_pages_[0-2]"), chunk);
+        }
+
+        putBlob(CONTAINER, "a.txt", "The lamp went dark.", Map.of("IsDeleted", "false"));
+        JsonPath changed = runAndAwait(SERVICE, "chunks-indexer");
+        assertEquals("success", changed.getString("status"), changed.prettify());
+        Map<String, Set<String>> afterChange = chunksByParent();
+        assertEquals(1, afterChange.get(parentA).size(), "the chunks of the old content are deleted: " + afterChange);
+        assertFalse(initial.get(parentA).containsAll(afterChange.get(parentA)), "a new hash keys the new chunk");
+        assertEquals(initial.get(parentB), afterChange.get(parentB), "another parent's chunks are left alone");
+        assertEquals(List.of("The lamp went dark."), searchAll(SERVICE, "chunks").stream()
+            .filter(chunk -> parentA.equals(chunk.get("parent_id"))).map(chunk -> chunk.get("chunk")).toList());
+
+        given().header("x-ms-meta-IsDeleted", "true").put("/{account}/{container}/{blob}?comp=metadata",
+            IndexerTestSupport.ACCOUNT, CONTAINER, "b.txt").then().statusCode(200);
+        JsonPath deleted = runAndAwait(SERVICE, "chunks-indexer");
+        assertEquals("success", deleted.getString("status"), deleted.prettify());
+        Map<String, Set<String>> afterDelete = chunksByParent();
+        assertEquals(Set.of(parentA), afterDelete.keySet(), "a soft-deleted parent takes its chunks with it");
+        assertEquals(afterChange.get(parentA), afterDelete.get(parentA));
+        assertEquals(List.of(parentA), searchAll(SERVICE, "parents").stream().map(parent -> parent.get("id"))
+            .toList());
+    }
+
+    /** The keys of the {@code chunks} index, by {@code parent_id}. */
+    private static Map<String, Set<String>> chunksByParent() {
+        return searchAll(SERVICE, "chunks").stream().collect(Collectors.groupingBy(
+            chunk -> (String) chunk.get("parent_id"),
+            Collectors.mapping(chunk -> (String) chunk.get("chunk_id"), Collectors.toSet())));
+    }
+
+    /** The parent key of the blob {@code name}: its encoded {@code metadata_storage_path}. */
+    private static String parentOf(Map<String, Set<String>> chunks, String name) {
+        return chunks.keySet().stream().filter(parent -> decodeKey(parent).endsWith("/" + CONTAINER + "/" + name))
+            .findFirst().orElseThrow(() -> new AssertionError("no chunks for " + name + ": " + chunks));
     }
 
     @Test

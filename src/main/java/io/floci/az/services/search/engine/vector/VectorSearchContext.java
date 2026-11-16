@@ -36,13 +36,7 @@ public final class VectorSearchContext {
         return new VectorSearchContext(List.of(), Map.of());
     }
 
-    /** Validates the vector queries of {@code request} and vectorizes the ones that need it. */
-    public static VectorSearchContext prepare(SearchIndexDefinition definition, SearchRequest request,
-                                              EngineSettings settings) {
-        return prepare(definition, request, settings, VectorizerClient.shared());
-    }
-
-    /** {@link #prepare(SearchIndexDefinition, SearchRequest, EngineSettings)} with a given vectorizer client. */
+    /** Validates the vector queries of {@code request} and vectorizes the ones that need it, through {@code client}. */
     public static VectorSearchContext prepare(SearchIndexDefinition definition, SearchRequest request,
                                               EngineSettings settings, VectorizerClient client) {
         if (request.vectorQueries().isEmpty()) {

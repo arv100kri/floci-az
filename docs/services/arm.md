@@ -122,6 +122,8 @@ floci-az:
   #   strict-locations: true         # default: on from strict
   #   strict-names: true             # default: on from strict
   #   strict-tokens: true            # default: on from strict or entra.validate-tokens
+  #   strict-rbac: true              # default: on from strict
+  #   strict-network: true           # default: on from strict
   cloud:
     default: AzureCloud
   services:
@@ -142,9 +144,11 @@ floci-az:
 | `parity-overrides.subscription-listing` | `FLOCI_AZ_PARITY_OVERRIDES_SUBSCRIPTION_LISTING` | on from `azure` | `true`: `GET /subscriptions` also lists subscriptions registered on first use, and `GET /subscriptions/{sub}` echoes the directory's id rather than the path's spelling |
 | `parity-overrides.strict-subscriptions` | `FLOCI_AZ_PARITY_OVERRIDES_STRICT_SUBSCRIPTIONS` | on from `strict` | `true`: an unknown subscription is `404 SubscriptionNotFound`. `false`: it is registered on first use |
 | `parity-overrides.resource-group-semantics` | `FLOCI_AZ_PARITY_OVERRIDES_RESOURCE_GROUP_SEMANTICS` | on from `azure` | `true`: a resource-group re-PUT answers `200`, a resource PUT under a missing group creates the group, and groups persist in the directory store |
-| `parity-overrides.resource-group-delete` | `FLOCI_AZ_PARITY_OVERRIDES_RESOURCE_GROUP_DELETE` | on from `azure` | `true`: a resource-group `DELETE` deletes every resource in the group and answers `202` with a `Location` to poll; the generic listings also show Event Grid, Monitor and Email resources |
+| `parity-overrides.resource-group-delete` | `FLOCI_AZ_PARITY_OVERRIDES_RESOURCE_GROUP_DELETE` | on from `azure` | `true`: a resource-group `DELETE` deletes every resource in the group and answers `202` with a `Location` to poll; the generic listings also show Event Grid, Monitor, Email and Azure AI Search resources |
 | `parity-overrides.strict-resource-groups` | `FLOCI_AZ_PARITY_OVERRIDES_STRICT_RESOURCE_GROUPS` | on from `strict` | `true`: a request for a resource under a group that does not exist is `404 ResourceGroupNotFound`, and groups are kept in the directory store |
-| `parity-overrides.strict-tokens` | `FLOCI_AZ_PARITY_OVERRIDES_STRICT_TOKENS` | on from `strict` or `entra.validate-tokens` | An ARM request with a missing or invalid Bearer token is `401`; see [Token verification](#token-verification) |
+| `parity-overrides.strict-tokens` | `FLOCI_AZ_PARITY_OVERRIDES_STRICT_TOKENS` | on from `strict` or `entra.validate-tokens` | An ARM request with a missing or invalid Bearer token is `401`; see [Token verification](#token-verification). The Azure AI Search data plane validates its Bearer tokens too |
+| `parity-overrides.strict-rbac` | `FLOCI_AZ_PARITY_OVERRIDES_STRICT_RBAC` | on from `strict` | `true`: a data plane that honours Azure RBAC refuses a Bearer caller whose [role assignments](authorization.md#evaluation) do not grant the operation. Today that is the [Azure AI Search](search-security.md#roles) data plane, which also checks the managed identity its indexers read through. `false`: assignments are stored and answered only |
+| `parity-overrides.strict-network` | `FLOCI_AZ_PARITY_OVERRIDES_STRICT_NETWORK` | on from `strict` | `true`: a service that models network isolation enforces it: public network access, IP firewall rules and private endpoint connections decide who reaches its data plane. Today that is [Azure AI Search](search-network-isolation.md). `false`: those settings are stored and answered only |
 | `cloud.default` | `FLOCI_AZ_CLOUD_DEFAULT` | `AzureCloud` | The cloud of the default tenant and of a tenant that names none: `AzureCloud`, `AzureUSGovernment` or `AzureChinaCloud`. An unknown name fails startup. Today it changes which cloud tenants and request scopes resolve to and the default location of a new group; endpoints, token issuers, DNS suffixes and TLS names stay the public cloud's, and a startup warning says so |
 | `cloud.<name>.default-location` | `FLOCI_AZ_CLOUD_<NAME>_DEFAULT_LOCATION` | the cloud's first catalog location | The location a resource or group of that cloud gets when its request names none; see [Resource locations](#resource-locations) |
 | `tenants[n].*` | `FLOCI_AZ_TENANTS_<n>__ID`, `..._DISPLAY_NAME`, `..._DEFAULT_DOMAIN`, `..._CLOUD` | none | Extra tenants; see below |
@@ -249,7 +253,7 @@ can also be set alone to opt in piecemeal:
 |---|---|
 | `compat` (default) | Nothing a client could rely on: unknown subscriptions are registered internally on first use but not listed, ids are echoed as sent, and resource groups answer as they always have (every PUT `201`, `DELETE` `200` without cascade) |
 | `azure` | Azure's answers for the requests Azure accepts. Every parity override on: `subscription-listing`, `resource-group-semantics`, `resource-group-delete`, `location-normalize`, `tenant-scoping` |
-| `strict` | `azure` plus Azure's refusals, every `strict-*` override: `strict-subscriptions`, `strict-resource-groups`, `strict-providers`, `strict-locations`, `strict-names`, `strict-tokens` |
+| `strict` | `azure` plus Azure's refusals, every `strict-*` override: `strict-subscriptions`, `strict-resource-groups`, `strict-providers`, `strict-locations`, `strict-names`, `strict-tokens`, `strict-rbac`, `strict-network` |
 
 `auth.mode` plays no part in any of this. The startup banner prints `parity: <level>` followed by every
 override set to a value its level would not give it. At the default level the line also names the
@@ -295,8 +299,9 @@ first use one subscription at the same moment, the one that registers it is serv
 The code `InvalidAuthenticationTokenTenant` is Azure's. Its status, its challenge and the message after the first sentence
 are an emulator choice, like the refusals above.
 
-Only ARM requests are checked. Data planes (Storage, Key Vault, App Configuration, ACR and others) still accept any
-Bearer token.
+Only ARM requests are checked here. The [Azure AI Search](search-security.md#credentials) data plane validates its
+Bearer tokens under the same switch, for a search audience rather than ARM's. The other data planes (Storage, Key
+Vault, App Configuration, ACR and others) still accept any Bearer token.
 
 ### First use and strict subscriptions
 
@@ -344,7 +349,7 @@ The rest depends on the parity overrides:
 | Resource PUT under a missing group | the resource is created, no group appears | `resource-group-semantics`: the group is created once the resource is (only after a `2xx`), in the location the resource reports, else the cloud's default location. `strict-resource-groups`: refused with `404 ResourceGroupNotFound` before the resource's handler runs, as is a read, an action or a delete of a resource under a missing group |
 | `DELETE` | `200`; only the group is removed, a missing group is `200` too | `resource-group-delete`: see below |
 | Persistence | in memory, lost on restart | `resource-group-semantics` or `strict-resource-groups`: kept in the directory store, so they follow `storage.services.directory.mode` |
-| Generic listings (`.../resources`) | as before: Event Grid topics, Log Analytics workspaces, data collection endpoints and rules, and Communication and Email services are not listed | `resource-group-delete`: listed, so Terraform's `prevent_deletion_if_contains_resources` sees what a delete would remove |
+| Generic listings (`.../resources`) | as before: Event Grid topics, Log Analytics workspaces, data collection endpoints and rules, Communication and Email services, and Azure AI Search services are not listed | `resource-group-delete`: listed, so Terraform's `prevent_deletion_if_contains_resources` sees what a delete would remove |
 
 Under `resource-group-delete` a `DELETE` of a group is the long-running operation the spec declares:
 
@@ -487,6 +492,7 @@ passes, as floci-az has always accepted them. The types that declare their rule 
 | `Microsoft.Network/virtualNetworks/subnets` | 1 to 80 letters, digits, underscores, periods and hyphens, starting with a letter or digit and ending with a letter, digit or underscore |
 | `Microsoft.Network/virtualNetworks` | 2 to 64 letters, digits, underscores, periods and hyphens, starting with a letter or digit and ending with a letter, digit or underscore |
 | `Microsoft.OperationalInsights/workspaces` | 4 to 63 letters, digits and hyphens, starting and ending with a letter or digit |
+| `Microsoft.Search/searchServices` | 2 to 60 lowercase letters, digits and hyphens, no hyphen among the first two characters or at the end, no consecutive hyphens |
 | `Microsoft.Sql/servers/databases` | 1 to 128 characters without `<>*%&:\/?` or control characters, not ending with a period or a space |
 | `Microsoft.Sql/servers/firewallRules` | 1 to 128 characters without `<>*%&:;\/?` or control characters, not ending with a period |
 | `Microsoft.Sql/servers` | 1 to 63 lowercase letters, digits and hyphens, not starting or ending with a hyphen |
@@ -521,17 +527,20 @@ Concurrent creates of one name from several subscriptions leave exactly one owne
 | `Microsoft.DBforPostgreSQL/flexibleServers`, `Microsoft.DBforMySQL/flexibleServers`, `Microsoft.DBforMariaDB/servers` | `409 ServerNameAlreadyExists` |
 | `Microsoft.ApiManagement/service` | `409 ServiceAlreadyExists` |
 | `Microsoft.Communication/communicationServices` | `409 Conflict` (see below) |
+| `Microsoft.Search/searchServices` | `409 Conflict` (see below) |
 
 `POST /subscriptions/{sub}/providers/Microsoft.Storage/checkNameAvailability`, the
-`Microsoft.KeyVault` equivalent and its `checkMhsmNameAvailability`, and the `Microsoft.Web` one for a site name
-report a taken name as `nameAvailable: false`, reason `AlreadyExists`.
+`Microsoft.KeyVault` equivalent and its `checkMhsmNameAvailability`, the `Microsoft.Web` one for a site name, and the
+`Microsoft.Search` one for a [search service](search.md) name report a taken name as `nameAvailable: false`, reason
+`AlreadyExists`.
 For `Microsoft.Storage`, malformed names report `nameAvailable: false`, reason
 `AccountNameInvalid`. Storage account names must contain 3 to 24 lowercase letters or digits. A `PUT`
-that creates a storage account with such a name is refused with `400 AccountNameInvalid`.
+that creates a storage account with such a name is refused with `400 AccountNameInvalid`. For `Microsoft.Search`, a
+name outside the rule above reports reason `Invalid`, with or without `strict-names`.
 
 The codes come from Microsoft's troubleshooting pages and real error payloads, because the REST specs
-do not model create conflicts. No public source gives the code for Managed HSM or Communication Services,
-so those two answer with ARM's generic `Conflict`. The status for the PostgreSQL, MySQL and MariaDB
+do not model create conflicts. No public source gives the code for Managed HSM, Communication Services or Azure AI
+Search, so those three answer with ARM's generic `Conflict`. The status for the PostgreSQL, MySQL and MariaDB
 servers is not publicly documented either; `409` is the likeliest.
 
 ## Intentional deviations

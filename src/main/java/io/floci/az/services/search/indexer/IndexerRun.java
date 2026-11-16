@@ -11,6 +11,7 @@ import io.floci.az.core.storage.StorageConnectionStrings.Service;
 import io.floci.az.core.storage.StorageConnectionStrings.Unresolved;
 import io.floci.az.services.search.SearchServiceRegistry.SearchServiceInfo;
 import io.floci.az.services.search.engine.index.IndexAction;
+import io.floci.az.services.search.engine.index.IndexedDocument;
 import io.floci.az.services.search.engine.index.LiveIndex;
 import io.floci.az.services.search.indexer.DataSourceDefinition.SoftDeletePolicy;
 import io.floci.az.services.search.indexer.IndexerState.RunStart;
@@ -25,21 +26,34 @@ import org.jboss.logging.Logger;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 /**
  * One indexer execution, following Learn's "Indexers in Azure AI Search" stages: the data source is resolved and,
- * for a managed-identity connection, authorized; its items are read (the new and changed ones, through the change
+ * for a managed-identity connection, authorized (and, under strict-network, admitted by the network rules of its
+ * storage account: {@link IndexerNetworkAccess}); its items are read (the new and changed ones, through the change
  * tracking state) and cracked; field mappings build each search document; a skillset, when the indexer names one,
  * enriches it through the {@link SkillsetRunner}; and the documents are written to the target index in batches with
  * {@code mergeOrUpload} (or {@code upload} after a reset, "flagged for full overwrite"), the documents a soft-delete
  * column marks with {@code delete}.
+ *
+ * <p>Index projections follow the content lifecycle of Learn's "Define index projections": before a parent's
+ * projections are written, the documents each projection target index holds for that parent (its key in the
+ * selector's {@code parentKeyFieldName}) that the new projections do not replace are deleted ("If the source content no
+ * longer exists ... the corresponding child document in the search index is deleted"; projected keys hash the parent's
+ * content, so changed content projects new keys); and a parent the soft-delete column removes takes its projected
+ * documents with it ("the corresponding child documents only get deleted if the deletion is detected by a
+ * dataDeletionDetectionPolicy").</p>
  *
  * <p>Item-level failures (a blob that does not crack, a mapping function that fails, an invalid key, a document the
  * index refuses, a skill error) are reported as errors and counted in {@code itemsFailed}; the run stops as a
@@ -67,7 +81,19 @@ final class IndexerRun {
 
     /** What a run resolved before it reads items. */
     private record Prepared(DataSourceDefinition dataSource, LiveIndex index, ObjectNode skillset, SourceReader reader,
-                            DocumentMapper mapper, SoftDeletePolicy softDelete, int batchSize) {
+                            DocumentMapper mapper, SoftDeletePolicy softDelete, int batchSize,
+                            List<ProjectionTarget> projectionTargets) {
+    }
+
+    /**
+     * An index a selector of the skillset's {@code indexProjections} writes to, and the field its projected documents
+     * hold their parent's key in.
+     */
+    private record ProjectionTarget(String indexName, String parentKeyFieldName) {
+    }
+
+    /** The projected documents of one parent key field of one index, by parent key. */
+    private record ProjectedChildren(LiveIndex index, String parentKeyField) {
     }
 
     /** One action waiting for its batch, and the name its failure is reported under. */
@@ -85,6 +111,11 @@ final class IndexerRun {
     private final List<IndexerIssue> errors = new ArrayList<>();
     private final List<IndexerIssue> warnings = new ArrayList<>();
     private final Map<String, List<Pending>> pending = new LinkedHashMap<>();
+    /**
+     * The keys of the projected documents each parent has, per projection index and parent key field: read from the
+     * index the first time a parent needs them, then kept current as this run queues writes and deletes.
+     */
+    private final Map<ProjectedChildren, Map<String, Set<String>>> projectedChildren = new HashMap<>();
     private int processed;
     private int failed;
     private int failedInBatch;
@@ -158,8 +189,26 @@ final class IndexerRun {
         } else {
             reader = cosmosSource(dataSource, connection);
         }
+        String resourceId = resourceId(connection);
+        runtime.network().check(service, dataSource, parameters.privateExecution(),
+            accountName(dataSource, connection), resourceId.isEmpty() ? null : resourceId);
         return new Prepared(dataSource, index, skillset, reader, mapper, dataSource.softDeletePolicy(),
-            parameters.effectiveBatchSize(dataSource.type()));
+            parameters.effectiveBatchSize(dataSource.type()), projectionTargets(skillset));
+    }
+
+    /** The distinct target index and parent key field of each selector of the skillset's index projections. */
+    private static List<ProjectionTarget> projectionTargets(ObjectNode skillset) {
+        Set<ProjectionTarget> targets = new LinkedHashSet<>();
+        if (skillset != null) {
+            for (JsonNode selector : skillset.path("indexProjections").path("selectors")) {
+                String index = SearchJson.text(selector, "targetIndexName");
+                String parentKey = SearchJson.text(selector, "parentKeyFieldName");
+                if (index != null && parentKey != null) {
+                    targets.add(new ProjectionTarget(index, parentKey));
+                }
+            }
+        }
+        return List.copyOf(targets);
     }
 
     private SourceReader blobSource(DataSourceDefinition dataSource, String connection, IndexerParameters parameters)
@@ -229,6 +278,17 @@ final class IndexerRun {
             trimmed = trimmed.substring(0, trimmed.length() - 1);
         }
         return trimmed;
+    }
+
+    /** The account a connection string the reader already resolved names. */
+    private static String accountName(DataSourceDefinition dataSource, String connection) {
+        if (dataSource.type().isCosmos()) {
+            return CosmosConnectionStrings.resolve(connection) instanceof CosmosConnectionStrings.Resolved resolved
+                ? resolved.accountName() : null;
+        }
+        Service storage = dataSource.type() == DataSourceType.AZURE_TABLE ? Service.TABLE : Service.BLOB;
+        return StorageConnectionStrings.resolve(connection, storage) instanceof Resolved resolved
+            ? resolved.accountName() : null;
     }
 
     /** The value of {@code key} in a {@code key=value;...} connection string, matched ignoring case; or null. */
@@ -303,6 +363,7 @@ final class IndexerRun {
             keyOnly.put(prepared.index().definition().keyField().name(), key);
             queue(indexName, new IndexAction(IndexActionType.DELETE, key, keyOnly, null),
                 "Projection.SearchIndex.Delete." + indexName);
+            replaceProjections(prepared, key, Map.of());
             endDocument(prepared);
             return;
         }
@@ -331,9 +392,11 @@ final class IndexerRun {
     private boolean enrich(Prepared prepared, DocumentMapper.Mapped mapped, ObjectNode fields)
             throws IndexerRunException {
         String issueName = "Enrichment.Skillset." + indexer.skillsetName();
+        ObjectNode document = mapped.enrichment();
+        document.put(SkillsetRunner.DOCUMENT_KEY_NODE, mapped.key());
         EnrichmentResult result;
         try {
-            result = runtime.skills().enrich(serviceName, prepared.skillset().deepCopy(), mapped.enrichment(),
+            result = runtime.skills().enrich(serviceName, prepared.skillset().deepCopy(), document,
                 indexer.outputFieldMappings().deepCopy());
         } catch (RuntimeException e) {
             LOG.errorv(e, "The skillset {0} of indexer {1}/{2} failed", indexer.skillsetName(), serviceName,
@@ -355,9 +418,14 @@ final class IndexerRun {
             return false;
         }
         mergeIndexFields(prepared, result.indexFields(), fields, mapped.key());
+        Map<String, Set<String>> projectedKeys = new HashMap<>();
         for (ProjectedDocument projection : result.projections()) {
-            queueProjection(prepared, projection, mapped.key());
+            String key = queueProjection(prepared, projection, mapped.key());
+            if (key != null) {
+                projectedKeys.computeIfAbsent(projection.targetIndexName(), ignored -> new HashSet<>()).add(key);
+            }
         }
+        replaceProjections(prepared, mapped.key(), projectedKeys);
         return !result.skipParentDocument();
     }
 
@@ -379,7 +447,11 @@ final class IndexerRun {
         }
     }
 
-    private void queueProjection(Prepared prepared, ProjectedDocument projection, String parentKey)
+    /**
+     * Queues one projected document; returns its key, or null when it has none. A key is returned even when the
+     * document is refused, so a document the parent projected before under the same key is kept.
+     */
+    private String queueProjection(Prepared prepared, ProjectedDocument projection, String parentKey)
             throws IndexerRunException {
         String indexName = projection.targetIndexName();
         String issueName = "Projection.SearchIndex.MergeOrUpload." + indexName;
@@ -387,7 +459,7 @@ final class IndexerRun {
         if (target == null) {
             fail(prepared, IndexerIssue.error(parentKey, 404, "The index '" + indexName + "' that an index projection "
                 + "targets does not exist.", issueName, null, WRITE_ANCHOR));
-            return;
+            return null;
         }
         ObjectNode normalized = SearchJson.object();
         Iterator<Map.Entry<String, JsonNode>> entries = projection.document().fields();
@@ -404,7 +476,7 @@ final class IndexerRun {
             fail(prepared, IndexerIssue.error("", 400, "Document key cannot be missing or empty.", issueName,
                 "An index projection of the document '" + parentKey + "' has no value for the key field '" + keyName
                 + "'.", WRITE_ANCHOR));
-            return;
+            return null;
         }
         String key = keyValue.asText();
         try {
@@ -414,6 +486,57 @@ final class IndexerRun {
         } catch (ItemFailure failure) {
             fail(prepared, failure.issue());
         }
+        return key;
+    }
+
+    /**
+     * Makes {@code projectedKeys} (by target index) the projected documents of the parent {@code parentKey}: queues the
+     * deletion of every other document a projection target index holds for that parent in its parent key field.
+     * The parent's own document, when it lives in a projection target index, is left alone.
+     */
+    private void replaceProjections(Prepared prepared, String parentKey, Map<String, Set<String>> projectedKeys) {
+        for (ProjectionTarget target : prepared.projectionTargets()) {
+            LiveIndex index = runtime.engine().service(serviceName).find(target.indexName()).orElse(null);
+            SearchFieldDefinition parentField = index == null ? null
+                : topLevelField(index, target.parentKeyFieldName());
+            if (parentField == null) {
+                continue;
+            }
+            Map<String, Set<String>> children = projectedChildren.computeIfAbsent(
+                new ProjectedChildren(index, parentField.name()),
+                key -> readChildren(key.index(), key.parentKeyField()));
+            Set<String> kept = projectedKeys.getOrDefault(target.indexName(), Set.of());
+            String keyField = index.definition().keyField().name();
+            for (String child : children.getOrDefault(parentKey, Set.of())) {
+                boolean parentDocument = index == prepared.index() && child.equals(parentKey);
+                if (!kept.contains(child) && !parentDocument) {
+                    ObjectNode keyOnly = SearchJson.object();
+                    keyOnly.put(keyField, child);
+                    queue(index.name(), new IndexAction(IndexActionType.DELETE, child, keyOnly, null),
+                        "Projection.SearchIndex.Delete." + index.name());
+                }
+            }
+            if (kept.isEmpty()) {
+                children.remove(parentKey);
+            } else {
+                children.put(parentKey, new HashSet<>(kept));
+            }
+        }
+    }
+
+    /** The keys of the documents of {@code index}, grouped by the value of their {@code parentKeyField}. */
+    private static Map<String, Set<String>> readChildren(LiveIndex index, String parentKeyField) {
+        return index.read(live -> {
+            Map<String, Set<String>> byParent = new HashMap<>();
+            for (int ordinal = 0; ordinal < live.ordinalLimit(); ordinal++) {
+                IndexedDocument document = live.document(ordinal);
+                JsonNode parent = document == null ? null : document.source().get(parentKeyField);
+                if (parent != null && parent.isTextual()) {
+                    byParent.computeIfAbsent(parent.textValue(), ignored -> new HashSet<>()).add(document.key());
+                }
+            }
+            return byParent;
+        });
     }
 
     private static SearchFieldDefinition topLevelField(LiveIndex index, String name) {

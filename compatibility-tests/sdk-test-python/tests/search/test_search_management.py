@@ -168,6 +168,17 @@ def test_management_plane_keys_authorize_the_data_plane(mgmt, created_service):
     assert status_of(lambda: list(_support.index_client(SERVICE, admin.primary_key).list_index_names())) == 403
 
 
+# https://learn.microsoft.com/azure/search/search-security-api-keys ("A request made to a search service endpoint is
+# accepted if both the request and the API key are valid")
+# https://learn.microsoft.com/rest/api/searchservice/http-status-codes ("403 Forbidden: Returned when authorization
+# fails")
+def test_an_unknown_api_key_is_rejected(created_service):
+    unknown = _support.search_client(SERVICE, "hotels", "not-a-key-of-this-service")
+    assert status_of(lambda: _support.search_keys(unknown, "*")) == 403
+    assert status_of(lambda: list(_support.index_client(SERVICE, "not-a-key-of-this-service")
+                                  .list_index_names())) == 403
+
+
 # https://learn.microsoft.com/rest/api/searchmanagement/services/delete (200 OK or 204 No Content)
 def test_delete_service_removes_it(mgmt, created_service):
     mgmt.services.delete(RG, SERVICE)

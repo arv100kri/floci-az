@@ -15,7 +15,9 @@ import io.floci.az.services.search.model.SearchRequest;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.closeTo;
@@ -186,12 +188,22 @@ class VectorQueryPipelineTest {
     void maxTextRecallSizeCutsTheTextListAndTheCountFollowsTheMode() {
         String vector = query("[0,0,1]", "titleVector", 1);
         SearchOutcome all = search("{\"search\":\"*\",\"count\":true,\"hybridSearch\":{\"maxTextRecallSize\":2},"
-            + "\"vectorQueries\":[" + vector + "]}");
+            + "\"facets\":[\"category\"],\"vectorQueries\":[" + vector + "]}");
         assertThat(keys(all), containsInAnyOrder("1", "2", "4"));
         assertThat(all.count(), is(5L));
+        assertThat(facetCounts(all, "category"), is(Map.of("fruit", 3, "vehicle", 2)));
         SearchOutcome retrievable = search("{\"search\":\"*\",\"count\":true,\"hybridSearch\":{\"maxTextRecallSize\":2,"
-            + "\"countAndFacetMode\":\"countRetrievableResults\"},\"vectorQueries\":[" + vector + "]}");
+            + "\"countAndFacetMode\":\"countRetrievableResults\"},\"facets\":[\"category\"],\"vectorQueries\":["
+            + vector + "]}");
         assertThat(retrievable.count(), is(3L));
+        assertThat(facetCounts(retrievable, "category"), is(Map.of("fruit", 2, "vehicle", 1)));
+    }
+
+    private static Map<String, Integer> facetCounts(SearchOutcome outcome, String facet) {
+        Map<String, Integer> counts = new HashMap<>();
+        outcome.facets().get(facet).forEach(bucket -> counts.put(bucket.get("value").asText(),
+            bucket.get("count").intValue()));
+        return counts;
     }
 
     @Test
@@ -238,6 +250,36 @@ class VectorQueryPipelineTest {
         assertThat(vectors.get(0).get("titleVector").get("vectorSimilarity").doubleValue(), closeTo(1.0, 1e-6));
         assertThat(search("{\"vectorQueries\":[" + query("[1,0,0]", "titleVector", 1) + "]}").results().getFirst()
             .hit().documentDebugInfo(), nullValue());
+    }
+
+    @Test
+    void vectorAndSemanticDebugInformationShareOneDocumentDebugInfo() {
+        LiveIndex index = EngineFixtures.index("""
+            {"name": "both", "fields": [
+              {"name": "id", "type": "Edm.String", "key": true},
+              {"name": "title", "type": "Edm.String"},
+              {"name": "v", "type": "Collection(Edm.Single)", "dimensions": 2, "vectorSearchProfile": "p"}
+            ],
+            "vectorSearch": {
+              "algorithms": [{"name": "a", "kind": "exhaustiveKnn"}],
+              "profiles": [{"name": "p", "algorithm": "a"}]
+            },
+            "semantic": {"configurations": [{"name": "titles", "prioritizedFields": {
+              "titleField": {"fieldName": "title"}}}]}}
+            """, "{\"id\":\"1\",\"title\":\"red apple\",\"v\":[1,0]}",
+            "{\"id\":\"2\",\"title\":\"green pear\",\"v\":[0,1]}");
+        for (String debug : List.of("vector|semantic", "semantic|vector", "all")) {
+            ObjectNode body = (ObjectNode) SearchJson.parse(("{\"search\":\"apple\",\"queryType\":\"semantic\","
+                + "\"semanticConfiguration\":\"titles\",\"debug\":\"" + debug + "\",\"vectorQueries\":["
+                + query("[1,0]", "v", 2) + "]}").getBytes(StandardCharsets.UTF_8));
+            SearchOutcome outcome = PIPELINE.run(index, SearchRequestParser.fromBody(body), EngineSettings.DEFAULTS);
+            assertThat(outcome.results().size(), is(2));
+            for (SearchOutcome.Result result : outcome.results()) {
+                JsonNode info = result.hit().documentDebugInfo();
+                assertThat(debug, info.get("vectors").get("subscores").get("vectors").isArray(), is(true));
+                assertThat(debug, info.get("semantic").isObject(), is(true));
+            }
+        }
     }
 
     @Test

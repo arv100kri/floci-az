@@ -24,12 +24,13 @@ public class IndexerRunner {
     private final CosmosReader cosmos;
     private final SkillsetRunner skills;
     private final ManagedIdentityAccess identities;
+    private final IndexerNetworkAccess network;
     private final EmulatorConfig config;
 
     @Inject
     public IndexerRunner(IndexerStore store, SearchEngine engine, BlobReader blobs, TableReader tables,
                          CosmosReader cosmos, SkillsetRunner skills, ManagedIdentityAccess identities,
-                         EmulatorConfig config) {
+                         IndexerNetworkAccess network, EmulatorConfig config) {
         this.store = store;
         this.engine = engine;
         this.blobs = blobs;
@@ -37,6 +38,7 @@ public class IndexerRunner {
         this.cosmos = cosmos;
         this.skills = skills;
         this.identities = identities;
+        this.network = network;
         this.config = config;
     }
 
@@ -81,6 +83,10 @@ public class IndexerRunner {
 
     ManagedIdentityAccess identities() {
         return identities;
+    }
+
+    IndexerNetworkAccess network() {
+        return network;
     }
 
     /** The emulator's base URL, for the {@code metadata_storage_path} of blobs. */

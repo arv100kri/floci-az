@@ -1,9 +1,10 @@
 # Azure AI Search: skillsets and AI enrichment
 
-floci-az runs Azure AI Search skillsets in process: an indexer that names a skillset sends every document
-through the enrichment pipeline before it is indexed. Utility skills, Custom Web API skills, AML skills and the
-Azure OpenAI embedding skill run; skills that need an Azure AI services model are accepted in definitions and fail
-the documents that reach them with an error naming the skill.
+floci-az runs [Azure AI Search](search.md) skillsets in process: an indexer that names a skillset sends every
+document through the enrichment pipeline before it is indexed. Utility skills, Custom Web API skills, AML skills and
+the Azure OpenAI embedding skill run; skills that need an Azure AI services model are accepted in definitions and fail
+the documents that reach them with an error naming the skill. The indexers and data sources that feed a skillset are
+described under [Indexers](search.md#indexers-over-floci-az-storage-and-cosmos-db).
 
 ---
 
@@ -88,7 +89,8 @@ floci-az:
 The request is `POST {model-endpoint}/embeddings` with `{"input": [...], "model": "<deploymentId>"}`, plus
 `dimensions` when the skill sets it and the `apiKey` as `api-key` and bearer token headers. Without a model endpoint,
 documents fail with `Could not execute skill because the Web Api request failed`, as when the resource cannot be
-reached.
+reached. [Skills and the model endpoint](search.md#skills-and-the-model-endpoint) lists the vectorizers that call the
+same endpoint.
 
 ---
 
@@ -104,6 +106,11 @@ document itself is not indexed. A projected document's key has the documented se
 document (it changes when the parent changes), the parent key and the source context path, such as
 `3f1c2a9b8d7e_aHR0cHM6Ly9ibG9i0_pages_0`.
 
+Projected documents follow their parent, as Learn's "Define index projections" describes for their content
+lifecycle. Every parent has its key in `/document/AzureSearch_DocumentKey`. When a run reprocesses a parent, the
+projected documents it does not produce again are deleted, so the chunks of changed content do not linger; a parent
+that the data source's soft-delete column policy removes takes its projected documents with it.
+
 ---
 
 ## Differences from Azure
@@ -114,7 +121,8 @@ document (it changes when the parent changes), the parent key and the source con
 - A Split page after the first starts with up to `pageOverlapLength` characters of the previous page, from a word
   start.
 - Joining strings with `+` in an expression puts a space between them, as the documented examples show.
-- `fixedLengthEncode` is the hexadecimal SHA-256 of the value; its algorithm is not documented.
+- `fixedLengthEncode` is the URL-safe Base64 SHA-256 of the value (43 characters), in an indexer's field mappings
+  and output field mappings alike. Its algorithm is not documented.
 - Web API batches hold the records of one document: floci-az enriches documents one at a time.
 - Document Extraction reads text formats only, and produces no `normalized_images`.
 - Plain `http` custom skill URIs to local endpoints are accepted outside `parity: strict`.

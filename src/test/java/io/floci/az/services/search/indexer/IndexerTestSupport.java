@@ -34,7 +34,12 @@ final class IndexerTestSupport {
     }
 
     static RequestSpecification admin() {
-        return given().header("api-key", SearchServiceRegistry.DEV_PRIMARY_ADMIN_KEY).contentType("application/json");
+        return admin(SearchServiceRegistry.DEV_PRIMARY_ADMIN_KEY);
+    }
+
+    /** A request with {@code apiKey}, for a service created through ARM, whose keys are its own. */
+    static RequestSpecification admin(String apiKey) {
+        return given().header("api-key", apiKey).contentType("application/json");
     }
 
     static String base(String service) {
@@ -54,19 +59,31 @@ final class IndexerTestSupport {
     }
 
     static JsonPath status(String service, String indexer) {
-        return admin().get(base(service) + "/indexers('" + indexer + "')/search.status" + API).then().statusCode(200)
-            .extract().jsonPath();
+        return status(service, indexer, SearchServiceRegistry.DEV_PRIMARY_ADMIN_KEY);
+    }
+
+    static JsonPath status(String service, String indexer, String apiKey) {
+        return admin(apiKey).get(base(service) + "/indexers('" + indexer + "')/search.status" + API).then()
+            .statusCode(200).extract().jsonPath();
     }
 
     static int historySize(String service, String indexer) {
-        return status(service, indexer).getList("executionHistory").size();
+        return historySize(service, indexer, SearchServiceRegistry.DEV_PRIMARY_ADMIN_KEY);
+    }
+
+    static int historySize(String service, String indexer, String apiKey) {
+        return status(service, indexer, apiKey).getList("executionHistory").size();
     }
 
     /** Waits until the execution history holds more than {@code previousRuns} entries; returns the newest. */
     static JsonPath awaitRun(String service, String indexer, int previousRuns) {
+        return awaitRun(service, indexer, previousRuns, SearchServiceRegistry.DEV_PRIMARY_ADMIN_KEY);
+    }
+
+    static JsonPath awaitRun(String service, String indexer, int previousRuns, String apiKey) {
         Instant deadline = Instant.now().plus(RUN_TIMEOUT);
         while (Instant.now().isBefore(deadline)) {
-            JsonPath status = status(service, indexer);
+            JsonPath status = status(service, indexer, apiKey);
             List<Object> history = status.getList("executionHistory");
             if (history.size() > previousRuns && !"inProgress".equals(status.getString("lastResult.status"))) {
                 return JsonPath.from(SearchJson.write(SearchJson.MAPPER.valueToTree(history.getFirst())));
@@ -74,14 +91,18 @@ final class IndexerTestSupport {
             pause(Duration.ofMillis(50));
         }
         throw new AssertionError("indexer " + indexer + " did not finish a run: "
-            + status(service, indexer).prettify());
+            + status(service, indexer, apiKey).prettify());
     }
 
     /** Runs an indexer on demand and waits for that run. */
     static JsonPath runAndAwait(String service, String indexer) {
-        int before = historySize(service, indexer);
-        admin().post(base(service) + "/indexers('" + indexer + "')/search.run" + API).then().statusCode(202);
-        return awaitRun(service, indexer, before);
+        return runAndAwait(service, indexer, SearchServiceRegistry.DEV_PRIMARY_ADMIN_KEY);
+    }
+
+    static JsonPath runAndAwait(String service, String indexer, String apiKey) {
+        int before = historySize(service, indexer, apiKey);
+        admin(apiKey).post(base(service) + "/indexers('" + indexer + "')/search.run" + API).then().statusCode(202);
+        return awaitRun(service, indexer, before, apiKey);
     }
 
     static List<Map<String, Object>> searchAll(String service, String index) {

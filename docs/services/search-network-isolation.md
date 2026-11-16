@@ -1,11 +1,13 @@
 # Azure AI Search: network isolation
 
-floci-az models the network isolation of an Azure AI Search service from ARM state and transport addresses only, with
-no new endpoints: public network access, IP firewall rules, private endpoint connections, the service's private link
-resource, shared private links for outbound access, and an empty list of network security perimeter configurations.
+floci-az models the network isolation of an [Azure AI Search](search.md) service from ARM state and transport
+addresses only, with no new endpoints: public network access, IP firewall rules, private endpoint connections, the
+service's private link resource, shared private links for outbound access, and an empty list of network security
+perimeter configurations.
 
 The settings are always stored and answered. They are **enforced on the data plane only under `strict-network`**
 (`parity: strict`, or `parity-overrides.strict-network: true`), so a default emulator accepts every caller, as before.
+Network checks run before any credential is read; keys, tokens and roles are on [Security](search-security.md).
 
 ## Configuration
 
@@ -41,12 +43,12 @@ objects.
 
 ### Private endpoint connections
 
-A connection is created by creating a `Microsoft.Network/privateEndpoints` resource whose `privateLinkServiceId` is the
-search service: one in `privateLinkServiceConnections` starts `Approved`, one in `manualPrivateLinkServiceConnections`
-starts `Pending`. Both sides show one state: an approval, a rejection or a removal made on the search service is
-written onto the private endpoint, whose own GET shows it, and a later PUT of the endpoint keeps it. Deleting the
-endpoint removes the connection; deleting the search service leaves its endpoints `Disconnected`, as Private Link
-leaves the endpoints of a removed resource.
+A connection is created by creating a [`Microsoft.Network/privateEndpoints`](network.md) resource whose
+`privateLinkServiceId` is the search service: one in `privateLinkServiceConnections` starts `Approved`, one in
+`manualPrivateLinkServiceConnections` starts `Pending`. Both sides show one state: an approval, a rejection or a
+removal made on the search service is written onto the private endpoint, whose own GET shows it, and a later PUT of
+the endpoint keeps it. Deleting the endpoint removes the connection; deleting the search service leaves its endpoints
+`Disconnected`, as Private Link leaves the endpoints of a removed resource.
 
 ### Shared private links
 
@@ -65,8 +67,30 @@ A link is `Approved` and `Succeeded` once its PUT answers, as floci-az's private
 that resource's owner approves it there. No floci-az service models those connections yet (Storage, Cosmos DB and
 Key Vault would, through the `SharedPrivateLinkTarget` interface), so today every link is approved.
 
-An indexer that runs with `executionEnvironment: private` needs an approved link to its data source; the emulator's
-`SearchOutboundNetwork.allows(service, resourceId, groupId)` answers that question for its indexers.
+Indexers read floci-az's Blob, Table and Cosmos DB services in process. Without `strict-network`, an indexer reads its
+data source whatever its `executionEnvironment` and the service's links. Under `strict-network`, before a run reads
+anything, it checks that the storage account it reads admits it: the account a `ResourceId=` connection string names,
+else the `Microsoft.Storage/storageAccounts` resource that owns the account name. The account's public endpoint is
+closed when its `publicNetworkAccess` is `Disabled` or `SecuredByPerimeter`, or its `networkAcls.defaultAction` is
+`Deny`. An open account admits indexers in both execution environments, with or without links. A closed one admits
+only:
+
+- an indexer with `executionEnvironment: private`, when the service holds an `Approved` link to the account for the
+  group of the data source's type: `blob` (`azureblob`), `dfs` (`adlsgen2`) or `table` (`azuretable`). Only the private
+  execution environment can use a link, and Azure does not guarantee to pick it unless the indexer asks for it, so any
+  other indexer is refused even when a link exists.
+- an `azureblob` or `adlsgen2` indexer that connects as a trusted service: a `ResourceId=` connection string read with
+  the search service's system-assigned identity (the data source names no user-assigned `identity`), to an account
+  whose `networkAcls.bypass` includes `AzureServices`, its default. As in Azure, the exception stays in effect when
+  `publicNetworkAccess` is `Disabled`; `"bypass": "None"` withdraws it. `SecuredByPerimeter` never honors it: no
+  network security perimeter is modelled, so the account behaves as if in an enforced perimeter with no access rule.
+
+A refused run ends as a `transientFailure` whose message names the account, why it refused and the ways in. A source
+floci-az holds no network rules for is reachable: an Azure Cosmos DB account (floci-az serves no
+`Microsoft.DocumentDB` accounts) and a storage account that was never created through ARM. The account's IP, virtual
+network and resource instance rules are not evaluated, since floci-az's indexers have no outbound address, so
+`defaultAction: Deny` refuses every other indexer. floci-az's Storage data plane does not enforce these settings on its
+own callers. `executionEnvironment: private` also sets the run time limit the indexer's status reports.
 
 ## Data plane enforcement
 
@@ -112,15 +136,15 @@ resource subnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' = {
 }
 ```
 
-With `floci-az.tls.enabled`, HTTP and HTTPS share the port through a TCP proxy, so the emulator sees every caller at
-the loopback address: private callers are recognized only with TLS off, and IP rules then need the
-`trust-client-ip-header` hook.
+With `floci-az.tls.enabled`, HTTP and HTTPS share the port through a TCP proxy, which hands each connection to the
+emulator with a PROXY protocol header naming the caller: private callers and IP rules see the caller's own address,
+with TLS on as with it off.
 
 ## HTTPS host names
 
 The self-signed certificate names `*.search.windows.net`, `*.search.azure.us` and `*.search.azure.cn` (the search
 suffixes of the cloud catalog), so an HTTPS client can call `https://{service}.search.windows.net` once that name
-resolves to floci-az.
+resolves to floci-az (see [Host style and HTTPS](search.md#host-style-and-https)).
 
 ## Differences from Azure
 

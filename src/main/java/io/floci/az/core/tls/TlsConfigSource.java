@@ -13,6 +13,7 @@ import org.jboss.logging.Logger;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.net.ServerSocket;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
@@ -57,7 +58,11 @@ import java.util.Set;
  *
  * <p>Both HTTP and HTTPS are served on the same public port via a
  * {@link TlsProxyServer} that detects the protocol from the first byte of each
- * incoming connection.
+ * incoming connection. Quarkus's own HTTP and HTTPS listeners move to two internal
+ * loopback ports ({@link #internalPorts()}), free ports picked at startup so that
+ * several TLS-enabled emulators can run on one machine, and read the PROXY protocol
+ * header the proxy opens every connection with, so a request's remote address stays
+ * the client's.
  */
 public class TlsConfigSource implements ConfigSource {
 
@@ -135,9 +140,19 @@ public class TlsConfigSource implements ConfigSource {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
-    // Internal ports used when TLS proxy is active
-    static final int HTTP_INTERNAL_PORT  = 4570;
-    static final int HTTPS_INTERNAL_PORT = 4571;
+    static final String HTTP_PORT_PROPERTY = "quarkus.http.port";
+    static final String HTTPS_PORT_PROPERTY = "quarkus.http.ssl-port";
+
+    /** The ports of Quarkus's internal HTTP and HTTPS listeners, behind {@link TlsProxyServer}. */
+    record InternalPorts(int http, int https) {
+    }
+
+    /**
+     * The two free ports picked for the internal listeners, once and then reused: Quarkus builds its
+     * configuration more than once, and every instance of this source must name the same ports.
+     * Guarded by the class.
+     */
+    private static InternalPorts freeInternalPorts;
 
     /** PEM content of the active TLS certificate, or {@code null} when TLS is disabled. */
     public static volatile String currentCertPem = null;
@@ -233,8 +248,17 @@ public class TlsConfigSource implements ConfigSource {
         // 400s every Host header outside {localhost,127.0.0.1,[::1]} — including this
         // emulator's own {account}.vault.azure.net host routing. Opt out explicitly.
         properties.put("quarkus.http.host-validation.require-localhost", "false");
-        properties.put("quarkus.http.port", String.valueOf(HTTP_INTERNAL_PORT));
-        properties.put("quarkus.http.ssl-port", String.valueOf(HTTPS_INTERNAL_PORT));
+        InternalPorts internalPorts = internalPorts();
+        properties.put(HTTP_PORT_PROPERTY, String.valueOf(internalPorts.http()));
+        properties.put(HTTPS_PORT_PROPERTY, String.valueOf(internalPorts.https()));
+        // A test run binds the test-port pair instead; the same ports keep a TLS-enabled test off
+        // Quarkus's fixed defaults (8081 and 8444).
+        properties.put("quarkus.http.test-port", String.valueOf(internalPorts.http()));
+        properties.put("quarkus.http.test-ssl-port", String.valueOf(internalPorts.https()));
+        // TlsProxyServer opens every connection it forwards with a PROXY protocol header naming the
+        // client: reading it makes a request's remote address the client's own, where it would
+        // otherwise be the proxy's loopback address for every caller.
+        properties.put("quarkus.http.proxy.use-proxy-protocol", "true");
 
         try {
             currentCertPem = Files.readString(Path.of(anchorPath));
@@ -242,8 +266,68 @@ public class TlsConfigSource implements ConfigSource {
             LOG.warnv("TLS: could not read cert PEM for /_floci/tls-cert endpoint: {0}", e.getMessage());
         }
 
-        LOG.infov("TLS: HTTPS enabled — proxy will listen on port {0} (HTTP+HTTPS), cert={1}",
-                resolveProperty("floci-az.port", "4577"), certPath);
+        LOG.infov("TLS: HTTPS enabled: the proxy will listen on port {0} (HTTP and HTTPS) and forward to the "
+                        + "internal ports {1} (HTTP) and {2} (HTTPS), cert={3}",
+                resolveProperty("floci-az.port", "4577"), String.valueOf(internalPorts.http()),
+                String.valueOf(internalPorts.https()), certPath);
+    }
+
+    /**
+     * The ports of Quarkus's internal HTTP and HTTPS listeners: those {@code quarkus.http.port} and
+     * {@code quarkus.http.ssl-port} name when a system property or environment variable sets them,
+     * else free ephemeral ports. A fixed default would keep a second TLS-enabled emulator from
+     * starting on the same machine.
+     */
+    static InternalPorts internalPorts() {
+        int http = configuredPort(HTTP_PORT_PROPERTY);
+        int https = configuredPort(HTTPS_PORT_PROPERTY);
+        if (http > 0 && https > 0) {
+            return new InternalPorts(http, https);
+        }
+        InternalPorts free = freeInternalPorts();
+        if (http > 0) {
+            return new InternalPorts(http, free.http() != http ? free.http() : free.https());
+        }
+        if (https > 0) {
+            return new InternalPorts(free.http() != https ? free.http() : free.https(), https);
+        }
+        return free;
+    }
+
+    /** The port {@code key} is set to by a system property or the environment; 0 when it names none. */
+    private static int configuredPort(String key) {
+        String value = resolveProperty(key, "").strip();
+        if (value.isEmpty()) {
+            return 0;
+        }
+        try {
+            int port = Integer.parseInt(value);
+            if (port > 0 && port <= 65535) {
+                return port;
+            }
+        } catch (NumberFormatException expected) {
+            // Not a number: warned about below, like every other value that names no fixed port.
+        }
+        LOG.warnv("TLS: {0}={1} names no fixed port, and the TLS proxy can only forward to one: unset it to let "
+                + "floci-az pick a free port", key, value);
+        return 0;
+    }
+
+    /**
+     * Two distinct free ports, picked by binding both at once to the wildcard address: a port free
+     * there is free on the loopback address the internal listeners bind, and on any address a
+     * {@code quarkus.http.host} override names. Another process can still take one before Quarkus
+     * binds it, which then fails startup with a bind error, as any port conflict does.
+     */
+    private static synchronized InternalPorts freeInternalPorts() {
+        if (freeInternalPorts == null) {
+            try (ServerSocket http = new ServerSocket(0); ServerSocket https = new ServerSocket(0)) {
+                freeInternalPorts = new InternalPorts(http.getLocalPort(), https.getLocalPort());
+            } catch (IOException e) {
+                throw new IllegalStateException("TLS: found no free ports for the internal HTTP and HTTPS listeners", e);
+            }
+        }
+        return freeInternalPorts;
     }
 
     /** Where the self-signed certificate, its CA and their keys are kept. */

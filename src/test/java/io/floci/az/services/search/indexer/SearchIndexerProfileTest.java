@@ -285,6 +285,8 @@ class SearchIndexerProfileTest {
         ObjectNode seen = FakeSkillsetRunner.lastDocument();
         assertEquals("b.txt", seen.path("title").asText(), "the /document node carries the field mapping targets");
         assertTrue(seen.has("metadata_storage_path"), "and the cracked source fields");
+        assertEquals(seen.path("id").asText(), seen.path(SkillsetRunner.DOCUMENT_KEY_NODE).asText(),
+            "and the document key in /document/AzureSearch_DocumentKey");
         assertEquals("/document/shout", FakeSkillsetRunner.lastOutputFieldMappings().path(0).path("sourceFieldName")
             .asText());
 
