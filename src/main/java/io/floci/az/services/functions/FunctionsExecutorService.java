@@ -3,6 +3,7 @@ package io.floci.az.services.functions;
 import io.floci.az.core.AzureErrorResponse;
 import io.floci.az.core.AzureRequest;
 import io.floci.az.services.functions.FunctionModels.FunctionDefinition;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
@@ -44,6 +45,15 @@ public class FunctionsExecutorService {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build();
+    }
+
+    /**
+     * Stops the HTTP client's threads. Its selector thread holds the context class loader it was started with, so a
+     * client left running keeps the stopped application's classes loaded.
+     */
+    @PreDestroy
+    void stop() {
+        httpClient.shutdownNow();
     }
 
     public Response invoke(FunctionDefinition def, List<FunctionDefinition> appDefs, AzureRequest request) {

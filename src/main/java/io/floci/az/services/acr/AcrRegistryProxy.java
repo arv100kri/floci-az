@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.floci.az.core.AzureRequest;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -67,10 +68,40 @@ public class AcrRegistryProxy {
     private static final String ACR_V1_CATALOG = "acr/v1/" + CATALOG;
     private static final String TAGS_LIST = "/tags/list";
 
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .followRedirects(HttpClient.Redirect.NEVER)
-            .build();
+    private volatile HttpClient httpClient;
+
+    /**
+     * The HTTP client to the shared container, built on first use rather than in a field initializer, which the
+     * bean's client proxy would run too.
+     */
+    private HttpClient httpClient() {
+        HttpClient client = httpClient;
+        if (client == null) {
+            synchronized (this) {
+                client = httpClient;
+                if (client == null) {
+                    client = HttpClient.newBuilder()
+                            .connectTimeout(Duration.ofSeconds(5))
+                            .followRedirects(HttpClient.Redirect.NEVER)
+                            .build();
+                    httpClient = client;
+                }
+            }
+        }
+        return client;
+    }
+
+    /**
+     * Stops the HTTP client's threads. Its selector thread holds the context class loader it was started with, so a
+     * client left running keeps the stopped application's classes loaded.
+     */
+    @PreDestroy
+    void stop() {
+        HttpClient client = httpClient;
+        if (client != null) {
+            client.shutdownNow();
+        }
+    }
 
     /**
      * The path the shared container sees for a client path under {@code /v2/}. Repository-scoped
@@ -232,7 +263,7 @@ public class AcrRegistryProxy {
                 .timeout(BACKEND_TIMEOUT)
                 .method(request.method(), body);
         forwardRequestHeaders(request, outgoing);
-        return httpClient.send(outgoing.build(), handler);
+        return httpClient().send(outgoing.build(), handler);
     }
 
     /** The registry error for a container that could not be reached or did not answer. */

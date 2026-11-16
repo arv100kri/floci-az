@@ -2,6 +2,7 @@ package io.floci.az.services.apim;
 
 import io.floci.az.core.AzureRequest;
 import io.floci.az.core.arm.ArmErrors;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.core.Response;
 
@@ -18,10 +19,35 @@ import java.util.Map;
 @ApplicationScoped
 public class ApiManagementProxy {
 
-    private final HttpClient httpClient;
+    private volatile HttpClient httpClient;
 
-    public ApiManagementProxy() {
-        this.httpClient = HttpClient.newHttpClient();
+    /**
+     * Stops the HTTP client's threads. Its selector thread holds the context class loader it was started with, so a
+     * client left running keeps the stopped application's classes loaded.
+     */
+    @PreDestroy
+    void stop() {
+        HttpClient client = httpClient;
+        if (client != null) {
+            client.shutdownNow();
+        }
+    }
+
+    /**
+     * The HTTP client, built on first use rather than in a constructor, which the bean's client proxy would run too.
+     */
+    private HttpClient httpClient() {
+        HttpClient client = httpClient;
+        if (client == null) {
+            synchronized (this) {
+                client = httpClient;
+                if (client == null) {
+                    client = HttpClient.newHttpClient();
+                    httpClient = client;
+                }
+            }
+        }
+        return client;
     }
 
     public Response invoke(AzureRequest request, ProxyRequest proxyRequest) {
@@ -58,7 +84,7 @@ public class ApiManagementProxy {
                 builder.header("Content-Type", contentType);
             }
             extraHeaders.forEach(builder::header);
-            HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            HttpResponse<byte[]> response = httpClient().send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
             Response.ResponseBuilder out = Response.status(response.statusCode()).entity(response.body());
             response.headers().firstValue("Content-Type").ifPresent(out::type);
             return out.build();

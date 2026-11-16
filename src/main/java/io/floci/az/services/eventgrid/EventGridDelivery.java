@@ -103,10 +103,17 @@ public class EventGridDelivery implements Resettable {
         }
     }
 
+    /**
+     * Stops the scheduler and the HTTP client. The client's selector thread holds the context class loader it was
+     * started with, so a client left running keeps the stopped application's classes loaded.
+     */
     @PreDestroy
     void shutdown() {
         if (scheduler != null) {
             scheduler.shutdownNow();
+        }
+        if (httpClient != null) {
+            httpClient.shutdownNow();
         }
     }
 
