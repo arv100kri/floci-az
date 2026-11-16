@@ -78,6 +78,14 @@ public class SearchServiceStore implements Resettable {
         return services.all();
     }
 
+    /**
+     * The {@code semanticSearch} plan ({@code disabled}, {@code free} or {@code standard}) of the stored service with
+     * ARM id {@code resourceId}; empty when no such service is stored.
+     */
+    public Optional<String> semanticSearch(String resourceId) {
+        return ArmResourceId.parse(resourceId).flatMap(this::get).map(service -> service.settings().semanticSearch());
+    }
+
     /** Every stored service as the data plane sees it. */
     public List<SearchServiceInfo> serviceInfos() {
         return services.all().stream().map(stored -> info(stored.value())).toList();

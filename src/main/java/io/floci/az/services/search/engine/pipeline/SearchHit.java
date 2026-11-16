@@ -14,9 +14,11 @@ import java.util.Map;
 public final class SearchHit {
 
     private final int ordinal;
+    private final double initialScore;
     private double score;
     private Double rerankerScore;
     private Double rerankerBoostedScore;
+    private Double semanticRankingScore;
     private Map<String, List<String>> highlights;
     private List<ObjectNode> captions;
     private ObjectNode documentDebugInfo;
@@ -24,11 +26,17 @@ public final class SearchHit {
 
     public SearchHit(int ordinal, double score) {
         this.ordinal = ordinal;
+        this.initialScore = score;
         this.score = score;
     }
 
     public int ordinal() {
         return ordinal;
+    }
+
+    /** The score the hit was retrieved with, before later stages (a scoring profile's functions) rescored it. */
+    public double initialScore() {
+        return initialScore;
     }
 
     /** The {@code @search.score}. */
@@ -55,6 +63,18 @@ public final class SearchHit {
 
     public void rerankerBoostedScore(Double value) {
         rerankerBoostedScore = value;
+    }
+
+    /**
+     * The score semantic ranking orders the hit by: its {@code @search.rerankerBoostedScore} when the semantic
+     * configuration ranks by it, else its {@code @search.rerankerScore}; null when the semantic ranker did not rank it.
+     */
+    public Double semanticRankingScore() {
+        return semanticRankingScore != null ? semanticRankingScore : rerankerScore;
+    }
+
+    public void semanticRankingScore(Double value) {
+        semanticRankingScore = value;
     }
 
     /** The {@code @search.highlights} by field, or null when none were requested. */
