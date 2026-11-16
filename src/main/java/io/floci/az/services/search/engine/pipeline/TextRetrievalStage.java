@@ -1,5 +1,6 @@
 package io.floci.az.services.search.engine.pipeline;
 
+import io.floci.az.services.search.engine.analysis.SynonymExpansion;
 import io.floci.az.services.search.engine.query.QueryExecutor;
 import io.floci.az.services.search.engine.query.QueryNode;
 import io.floci.az.services.search.engine.query.QueryParsers;
@@ -21,6 +22,7 @@ public final class TextRetrievalStage implements SearchStage {
         }
         QueryNode query = QueryParsers.forType(request.effectiveQueryType())
             .parse(request.search(), request.effectiveSearchMode());
+        query = SynonymExpansion.expand(query, execution.index(), execution.searchFields());
         ScoredDocs docs = new QueryExecutor(execution.index(), execution.searchFields(), execution.fieldWeights())
             .execute(query);
         execution.textResults(docs == null ? new ScoredDocs() : docs);

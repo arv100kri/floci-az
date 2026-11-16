@@ -1,0 +1,15 @@
+# Stop words of the bg.microsoft analyzer, as Microsoft publishes them in "Stopwords reference (Microsoft analyzers)":
+# https://github.com/MicrosoftDocs/azure-docs/blob/d0fa0fdcf7/articles/search/reference-stopwords.md
+# (c) Microsoft Corporation. Licensed under the Creative Commons Attribution 4.0 International License (CC BY 4.0):
+# https://creativecommons.org/licenses/by/4.0/
+# Changes: the list was extracted into one word per line, entries listing several space-separated characters were
+# split into one line per character, and repeated entries were dropped.
+вж
+до
+е
+и
+на
+от
+то
+у
+че

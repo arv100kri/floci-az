@@ -110,10 +110,17 @@ public final class QueryExecutor {
         return result;
     }
 
+    /** Combines the tokens of a word with {@code occur}; tokens on one position (a word and its synonyms) are ORed. */
     private ScoredDocs tokensInField(SearchFieldDefinition field, List<Token> tokens, Occur occur) {
         ScoredDocs combined = null;
-        for (Token token : tokens) {
-            ScoredDocs single = termInField(field, token.term());
+        int start = 0;
+        while (start < tokens.size()) {
+            int end = start;
+            ScoredDocs single = null;
+            while (end < tokens.size() && tokens.get(end).position() == tokens.get(start).position()) {
+                single = union(single, termInField(field, tokens.get(end).term()));
+                end++;
+            }
             if (combined == null) {
                 combined = single;
             } else if (occur == Occur.MUST) {
@@ -121,6 +128,7 @@ public final class QueryExecutor {
             } else {
                 combined = union(combined, single);
             }
+            start = end;
         }
         return combined;
     }

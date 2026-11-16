@@ -1,6 +1,7 @@
 package io.floci.az.services.search.engine;
 
 import io.floci.az.services.search.engine.analysis.AnalyzerRegistry;
+import io.floci.az.services.search.engine.analysis.SynonymMapSource;
 import io.floci.az.services.search.engine.index.IndexAction;
 import io.floci.az.services.search.engine.index.IndexPersistence;
 import io.floci.az.services.search.engine.index.LiveIndex;
@@ -24,13 +25,20 @@ public final class SearchEngine {
     private final EngineSettings settings;
     private final AnalyzerRegistry analyzers;
     private final SearchPipeline pipeline;
+    private final SynonymMapSource synonymMaps;
     private final Map<String, ServiceIndexes> services = new ConcurrentHashMap<>();
 
-    public SearchEngine(IndexPersistence persistence, EngineSettings settings, SearchPipeline pipeline) {
+    public SearchEngine(IndexPersistence persistence, EngineSettings settings, SearchPipeline pipeline,
+                        SynonymMapSource synonymMaps) {
         this.persistence = persistence;
         this.settings = settings;
         this.analyzers = AnalyzerRegistry.defaultRegistry();
         this.pipeline = pipeline;
+        this.synonymMaps = synonymMaps;
+    }
+
+    public SearchEngine(IndexPersistence persistence, EngineSettings settings, SearchPipeline pipeline) {
+        this(persistence, settings, pipeline, SynonymMapSource.NONE);
     }
 
     public SearchEngine(IndexPersistence persistence, EngineSettings settings) {
@@ -52,7 +60,7 @@ public final class SearchEngine {
     /** The indexes of {@code service}, loading them from persistence on first use. Service names ignore case. */
     public ServiceIndexes service(String service) {
         return services.computeIfAbsent(service.toLowerCase(Locale.ROOT),
-            name -> new ServiceIndexes(name, persistence, analyzers));
+            name -> new ServiceIndexes(name, persistence, analyzers.forService(name, synonymMaps)));
     }
 
     /** Runs a query. */

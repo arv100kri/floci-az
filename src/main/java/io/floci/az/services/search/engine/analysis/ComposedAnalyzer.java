@@ -45,7 +45,7 @@ public final class ComposedAnalyzer implements Analyzer {
         if (!charFilters.isEmpty()) {
             List<Token> corrected = new ArrayList<>(tokens.size());
             for (Token token : tokens) {
-                corrected.add(new Token(token.term(), token.position(), correction.applyAsInt(token.startOffset()),
+                corrected.add(token.withOffsets(correction.applyAsInt(token.startOffset()),
                     correction.applyAsInt(token.endOffset())));
             }
             tokens = corrected;
