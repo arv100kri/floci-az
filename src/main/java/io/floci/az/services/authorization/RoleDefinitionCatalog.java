@@ -15,16 +15,17 @@ import java.util.Optional;
 /**
  * Azure's built-in role definitions, read from {@code azure/role-definitions.json}, which {@code tools/arm/gen_roles.py}
  * generates from iam-dataset's copy of the Azure API's own list. Every GUID, name and permission is Azure's; nothing
- * here is typed by hand.
+ * here is typed by hand. Read-only and public for the RBAC evaluator in {@code core.auth}.
  */
-final class RoleDefinitionCatalog {
+public final class RoleDefinitionCatalog {
 
     static final String RESOURCE = "azure/role-definitions.json";
+    private static final String DEFINITIONS_MARKER = "/roledefinitions/";
 
     /** One permission set of a role: the action lists, and the condition Azure reports from 2022-05-01-preview. */
-    record Permission(List<String> actions, List<String> notActions, List<String> dataActions,
-                      List<String> notDataActions, String condition, String conditionVersion) {
-        Permission {
+    public record Permission(List<String> actions, List<String> notActions, List<String> dataActions,
+                             List<String> notDataActions, String condition, String conditionVersion) {
+        public Permission {
             actions = List.copyOf(actions);
             notActions = List.copyOf(notActions);
             dataActions = List.copyOf(dataActions);
@@ -37,9 +38,9 @@ final class RoleDefinitionCatalog {
      *
      * @param name the role's GUID, which is also the last segment of its id
      */
-    record RoleDefinition(String name, String roleName, String description, String roleType,
-                          List<String> assignableScopes, List<Permission> permissions) {
-        RoleDefinition {
+    public record RoleDefinition(String name, String roleName, String description, String roleType,
+                                 List<String> assignableScopes, List<Permission> permissions) {
+        public RoleDefinition {
             assignableScopes = List.copyOf(assignableScopes);
             permissions = List.copyOf(permissions);
         }
@@ -49,14 +50,28 @@ final class RoleDefinitionCatalog {
     }
 
     /** Every built-in role, ordered by GUID. */
-    static List<RoleDefinition> all() {
+    public static List<RoleDefinition> all() {
         return Bundled.ROLES;
     }
 
     /** The role whose GUID is {@code guid}, compared ignoring case. */
-    static Optional<RoleDefinition> byGuid(String guid) {
+    public static Optional<RoleDefinition> byGuid(String guid) {
         return guid == null ? Optional.empty()
                 : Optional.ofNullable(Bundled.BY_GUID.get(guid.toLowerCase(Locale.ROOT)));
+    }
+
+    /**
+     * The role a role definition id names, in any of the forms an assignment carries it: the tenant form
+     * {@code /providers/Microsoft.Authorization/roleDefinitions/{guid}}, a subscription's, or another scope's.
+     */
+    public static Optional<RoleDefinition> byId(String roleDefinitionId) {
+        if (roleDefinitionId == null) {
+            return Optional.empty();
+        }
+        String id = roleDefinitionId.endsWith("/")
+                ? roleDefinitionId.substring(0, roleDefinitionId.length() - 1) : roleDefinitionId;
+        int marker = id.toLowerCase(Locale.ROOT).lastIndexOf(DEFINITIONS_MARKER);
+        return marker < 0 ? Optional.empty() : byGuid(id.substring(marker + DEFINITIONS_MARKER.length()));
     }
 
     static List<RoleDefinition> parse(InputStream in) throws IOException {

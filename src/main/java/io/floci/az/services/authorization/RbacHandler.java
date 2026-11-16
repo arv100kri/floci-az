@@ -45,7 +45,8 @@ import java.util.regex.Pattern;
 /**
  * Azure role-based access control under {@code Microsoft.Authorization}: Azure's built-in role definitions, read-only,
  * and the role assignments clients create, at any scope from the tenant root to a resource. Assignments are stored and
- * answered as Azure answers them; nothing evaluates them, so they grant and deny nothing.
+ * answered as Azure answers them; {@code core.auth.RbacEvaluator} evaluates them for a data plane that asks, so on
+ * their own they grant and deny nothing.
  *
  * <p>The contract is the one clients pin, assignments at {@code 2022-04-01} and definitions at
  * {@code 2022-05-01-preview} (azurerm, the az CLI and azure-mgmt-authorization all send that pair). Where the
@@ -71,11 +72,8 @@ public class RbacHandler implements AzureServiceHandler, Resettable, ResourceGro
     private static final Pattern MANAGEMENT_GROUP_SCOPE =
             Pattern.compile("providers/microsoft\\.management/managementgroups/([^/]+)(?:/.*)?");
     private static final String MANAGEMENT_GROUP_PREFIX = "providers/microsoft.management/managementgroups/";
-    /**
-     * Internal: the tenant an assignment at a management group or the tenant root was made in. floci-az keeps one
-     * management-group hierarchy per tenant, and those scopes' ids do not name the tenant. Never answered.
-     */
-    private static final String TENANT_KEY = "_tenant";
+    /** Internal: see {@link RoleAssignmentStore#TENANT_KEY}. Never answered. */
+    private static final String TENANT_KEY = RoleAssignmentStore.TENANT_KEY;
     private static final Pattern GUID_AFTER_DEFINITIONS =
             Pattern.compile("(?i).*/roleDefinitions/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/?");
     /** An assignment's properties, in the order Azure writes them; every one is present, absent ones as null. */

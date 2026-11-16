@@ -86,6 +86,9 @@ public class BannerLogger {
         if (config.services().keyVault().enabled()) {
             sb.append(serviceStatus("keyvault", true, getStorageMode("keyvault")));
         }
+        if (config.services().search().enabled()) {
+            sb.append(serviceStatus("search", true, getStorageMode("search")));
+        }
         if (config.services().sql().enabled()) {
             String provider = config.services().sql().dataPlaneProvider().name()
                 .toLowerCase(Locale.ROOT);
@@ -266,6 +269,8 @@ public class BannerLogger {
         overrides.put("strict-names", config.strictNames());
         overrides.put("strict-tokens", config.strictTokens());
         overrides.put("tenant-scoping", config.tenantScoping());
+        overrides.put("strict-rbac", config.strictRbac());
+        overrides.put("strict-network", config.strictNetwork());
         Map<String, Boolean> levelDefaults = Map.ofEntries(
                 Map.entry("subscription-listing", level.includes(ParityLevel.AZURE)),
                 Map.entry("strict-subscriptions", level.includes(ParityLevel.STRICT)),
@@ -277,7 +282,9 @@ public class BannerLogger {
                 Map.entry("strict-locations", level.includes(ParityLevel.STRICT)),
                 Map.entry("strict-names", level.includes(ParityLevel.STRICT)),
                 Map.entry("strict-tokens", level.includes(ParityLevel.STRICT)),
-                Map.entry("tenant-scoping", level.includes(ParityLevel.AZURE)));
+                Map.entry("tenant-scoping", level.includes(ParityLevel.AZURE)),
+                Map.entry("strict-rbac", level.includes(ParityLevel.STRICT)),
+                Map.entry("strict-network", level.includes(ParityLevel.STRICT)));
         StringBuilder line = new StringBuilder("parity: ").append(level.name().toLowerCase(Locale.ROOT));
         overrides.forEach((name, value) -> {
             if (!value.equals(levelDefaults.get(name))) {
@@ -319,6 +326,7 @@ public class BannerLogger {
             case "monitor"   -> config.storage().services().monitor().mode().orElse(config.storage().mode());
             case "email"     -> config.storage().services().email().mode().orElse(config.storage().mode());
             case "directory" -> config.storage().services().directory().mode().orElse(config.storage().mode());
+            case "search"    -> config.storage().services().search().mode().orElse(config.storage().mode());
             default          -> config.storage().mode();
         };
     }

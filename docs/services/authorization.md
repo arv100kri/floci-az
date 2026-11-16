@@ -7,9 +7,10 @@ Terraform provider (`azurerm_role_assignment`, `data "azurerm_role_definition"`)
 Covers Azure's **built-in role definitions** and **role assignments** at every scope: the tenant root, a
 management group, a subscription, a resource group and any resource.
 
-> **Stored, not enforced.** Role assignments are kept and answered the way Azure answers them, but nothing
-> evaluates them: an assignment grants nothing and its absence denies nothing. floci-az authorizes no request
-> by role.
+> **Stored; evaluated only where a data plane asks.** Role assignments are kept and answered the way Azure answers
+> them. floci-az can also evaluate them the way Azure RBAC does (see [Evaluation](#evaluation)), for a data plane to
+> consult under `parity-overrides.strict-rbac`. No service consults it yet, so today an assignment grants nothing and
+> its absence denies nothing.
 
 > **HTTP-only, no Docker.** Assignments are kept in the `authorization` store, which follows the global
 > `storage.mode`, so they survive a restart in a persistent mode. They are keyed by their lowercased id.
@@ -44,6 +45,26 @@ management group, a subscription, a resource group and any resource.
     - an unknown role: `400 RoleDefinitionDoesNotExist`.
 - **Resource group delete**: the group's assignments, and those on its resources, go with it.
 
+## Evaluation
+
+The RBAC evaluator (`RbacEvaluator`) decides whether a principal may perform an action or a data action at a scope,
+following Azure's documented steps ("How Azure RBAC determines if a user has access to a resource"):
+
+- **Scope**: an assignment applies at its own scope and every scope below it. The scope asked about can be any ARM
+  id, including a data plane child path such as `.../searchServices/{service}/indexes/{index}`, where Azure AI Search
+  documents index-scoped assignments. Above a subscription come its management group, that group's ancestors and
+  the tenant root `/`, in the subscription's tenant. Scopes compare ignoring case.
+- **Principal**: the caller's object id (a token's `oid`), the groups of the token's `groups` claim when it has one,
+  and every group the Entra directory holds the caller in, transitively through nested groups.
+- **Permissions**: within each permission entry, `actions` minus `notActions`, or for a data action `dataActions`
+  minus `notDataActions`. A control plane action never grants a data action. `*` matches any run of characters,
+  `/` included, and matching ignores case. Assignments add up: a `notActions` entry excludes nothing another
+  assignment grants.
+- **Roles**: Azure's built-in roles; floci-az has no custom roles.
+
+Each decision names the assignments that grant the operation, or says why none does, for logs and for the data
+plane's own `403`.
+
 ## Parity
 
 | Behaviour | floci-az | Parity switch |
@@ -53,6 +74,8 @@ management group, a subscription, a resource group and any resource.
 | Assignment name that is not a GUID | `400 InvalidResourceName` | `strict-names` |
 | Custom role definitions (PUT, DELETE) | `501 NotImplemented` | none |
 | Role definition dates (`createdOn`, `updatedOn`) | `null`: Azure's role list carries none | none |
+| Role assignment conditions (Azure ABAC), when evaluated | **not evaluated: an assignment with a `condition`, or a built-in role permission entry with one, grants nothing.** Conservative: floci-az never allows what Azure might refuse, though it may refuse what Azure would allow | none |
+| Deny assignments, when evaluated | none: floci-az keeps none, and Azure lets no client create one | none |
 
 Not every error code is documented by Azure. `RoleAssignmentNotFound` (a missing assignment) and
 `RoleDefinitionDoesNotExist` (an unknown role) are not in the spec, the RBAC docs or the SDKs; clients act on the

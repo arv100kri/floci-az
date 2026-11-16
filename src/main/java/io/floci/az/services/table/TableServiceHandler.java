@@ -217,8 +217,35 @@ public class TableServiceHandler implements AzureServiceHandler, Resettable {
         };
     }
 
-    private boolean tableExists(String accountName, String tableName) {
+    boolean tableExists(String accountName, String tableName) {
         return store.get(nsKey(accountName, tableName)).isPresent();
+    }
+
+    /**
+     * The stored entities of a table, for {@link TableReader}. Read under the write lock, which every write holds
+     * for its whole check-and-write, so a {@code $batch} (rollback included) or a Delete Table in flight is seen
+     * entirely or not at all.
+     *
+     * @return empty when the table does not exist
+     */
+    Optional<List<StoredObject>> storedEntities(String accountName, String tableName) {
+        synchronized (writeLock) {
+            if (!tableExists(accountName, tableName)) {
+                return Optional.empty();
+            }
+            String keyPrefix = objKey(accountName, tableName, "");
+            return Optional.of(store.scan(key -> key.startsWith(keyPrefix)));
+        }
+    }
+
+    /** The names of an account's tables in name order, for {@link TableReader}. */
+    List<String> tableNames(String accountName) {
+        String nsFilter = NS_PREFIX + accountName + "/";
+        return store.keys().stream()
+                .filter(key -> key.startsWith(nsFilter))
+                .map(key -> key.substring(nsFilter.length()))
+                .sorted()
+                .toList();
     }
 
     /**

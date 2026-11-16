@@ -88,6 +88,8 @@ floci-az:
         flush-interval-ms: 5000
       directory:                    # tenants, subscriptions (seeded, configured, first use) and, under the resource-group overrides, groups
         flush-interval-ms: 5000
+      search:                       # search index definitions, documents and indexer state; the in-memory index is rebuilt at startup
+        flush-interval-ms: 5000
 
   # How closely floci-az follows Azure where Azure differs from what floci-az has always answered.
   # compat (default): nothing a client could rely on changes. azure: every parity override on.
@@ -130,6 +132,13 @@ floci-az:
     # strict-tokens: true           # FLOCI_AZ_PARITY_OVERRIDES_STRICT_TOKENS; default on from strict or entra.validate-tokens.
     #                               # An ARM request with a missing, unsigned, expired or wrong-audience Bearer token
     #                               # is 401. Data planes still accept any token
+    # strict-rbac: true             # FLOCI_AZ_PARITY_OVERRIDES_STRICT_RBAC; default on from strict.
+    #                               # A data plane that honours Azure RBAC (Azure AI Search) refuses a Bearer caller
+    #                               # whose role assignments do not grant the data action; otherwise assignments
+    #                               # are stored but grant and deny nothing
+    # strict-network: true          # FLOCI_AZ_PARITY_OVERRIDES_STRICT_NETWORK; default on from strict.
+    #                               # A service that models network isolation (Azure AI Search) enforces public
+    #                               # network access, IP firewall rules and private endpoint connections
 
   # The cloud a tenant lives in when nothing names one: AzureCloud, AzureUSGovernment or AzureChinaCloud.
   cloud:
@@ -234,6 +243,13 @@ floci-az:
           # Embedded
     key-vault:
       enabled: true
+    search:
+      enabled: true                 # Azure AI Search: Microsoft.Search control plane + data plane at {svc}.search.windows.net and /{svc}-search/; in-process engine
+      max-documents-per-index: 100000   # FLOCI_AZ_SERVICES_SEARCH_MAX_DOCUMENTS_PER_INDEX: emulator memory guard, not an Azure quota
+      indexer-min-interval-seconds: 300 # FLOCI_AZ_SERVICES_SEARCH_INDEXER_MIN_INTERVAL_SECONDS: Azure's 5-minute floor; lower it for tests
+      semantic-ranker: stand-in     # FLOCI_AZ_SERVICES_SEARCH_SEMANTIC_RANKER: stand-in (deterministic reranker) | disabled
+      # model-endpoint: http://localhost:11434/v1   # FLOCI_AZ_SERVICES_SEARCH_MODEL_ENDPOINT: OpenAI-compatible endpoint for vectorizers and embedding skills
+      trust-client-ip-header: false # FLOCI_AZ_SERVICES_SEARCH_TRUST_CLIENT_IP_HEADER: test hook, read x-floci-az-client-ip for IP firewall rules
     event-hub:
       enabled: true
       # Real Artemis, not a mock: the AMQP data plane now works with the Azure SDKs, so both compat

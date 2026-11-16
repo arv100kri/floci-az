@@ -1704,6 +1704,51 @@ public class CosmosHandler implements AzureServiceHandler, Resettable {
     }
 
     // -----------------------------------------------------------------------
+    // In-process reads (CosmosReader)
+    // -----------------------------------------------------------------------
+
+    /**
+     * A container's properties and live documents, for {@link CosmosReader}. Taken under the monitor document
+     * writes, transactional batches and deletes hold, so none of them is seen half done; expired documents are
+     * purged on the way, as every read does.
+     *
+     * @return empty when the container does not exist
+     */
+    synchronized Optional<ContainerSnapshot> containerSnapshot(String account, String dbId, String collId) {
+        Optional<StoredObject> collFound = store.get(collKey(account, dbId, collId));
+        if (collFound.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(new ContainerSnapshot(parseData(collFound.get()),
+                liveDocuments(account, dbId, collId, containerDefaultTtl(collFound))));
+    }
+
+    /** A container's resource properties (partitionKey, indexingPolicy, ...) and its live documents. */
+    record ContainerSnapshot(Map<String, Object> properties, List<Map<String, Object>> documents) {
+    }
+
+    /** The ids of an account's databases in id order, for {@link CosmosReader}. */
+    synchronized List<String> databaseIds(String account) {
+        String prefix = account + K_DB;
+        return store.scan(k -> k.startsWith(prefix) && !k.substring(prefix.length()).contains("|")).stream()
+                .map(database -> String.valueOf(parseData(database).get("id")))
+                .sorted()
+                .toList();
+    }
+
+    /** The ids of a database's containers in id order, for {@link CosmosReader}; empty when it does not exist. */
+    synchronized Optional<List<String>> containerIds(String account, String dbId) {
+        if (store.get(dbKey(account, dbId)).isEmpty()) {
+            return Optional.empty();
+        }
+        String prefix = account + K_COLL + dbId + "|";
+        return Optional.of(store.scan(k -> k.startsWith(prefix)).stream()
+                .map(container -> String.valueOf(parseData(container).get("id")))
+                .sorted()
+                .toList());
+    }
+
+    // -----------------------------------------------------------------------
     // Partition key helpers
     // -----------------------------------------------------------------------
 

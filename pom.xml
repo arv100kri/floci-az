@@ -552,6 +552,12 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${surefire-plugin.version}</version>
                 <configuration>
+                    <!-- Quarkus creates the class loaders of every @QuarkusTest profile when it discovers the
+                         tests, and they keep each profile's application classes loaded until the fork exits, so
+                         class space grows with the number of test profiles: about 1 MB per Quarkus class loader,
+                         on main as well. The suite peaks at about 1.04 GB, past the default 1 GB of compressed
+                         class space. -->
+                    <argLine>-XX:CompressedClassSpaceSize=2g</argLine>
                     <systemPropertyVariables>
                         <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
                         <maven.home>${maven.home}</maven.home>
