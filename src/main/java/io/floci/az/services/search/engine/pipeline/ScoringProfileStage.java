@@ -1,30 +1,35 @@
 package io.floci.az.services.search.engine.pipeline;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import io.floci.az.services.search.model.SearchException;
-import io.floci.az.services.search.model.SearchJson;
+import io.floci.az.services.search.engine.index.LiveIndex;
+
+import java.time.Instant;
 
 /**
- * <b>STUB, to be replaced by scoring profiles.</b> Will apply the request's {@code scoringProfile} (or the index's
- * {@code defaultScoringProfile}): text weights in {@link #prepare} through {@link SearchExecution#fieldWeights()},
- * then the freshness, magnitude, distance and tag functions with their interpolations and aggregation in
- * {@link #apply}. Today it only refuses a profile the index does not define, as the service does; scores are
- * unchanged.
+ * Applies the request's {@code scoringProfile}, or the index's {@code defaultScoringProfile} when the request names
+ * none (see {@link ScoringProfile}): its text weights in {@link #prepare}, through
+ * {@link SearchExecution#fieldWeights()}, so text scoring uses them; then its functions in {@link #apply}, multiplying
+ * each hit's score. An unknown profile, or a missing or malformed scoring parameter, is a 400 before any stage runs.
  */
 public final class ScoringProfileStage implements SearchStage {
 
     @Override
+    public void prepare(SearchExecution execution) {
+        ScoringProfile profile = ScoringProfile.resolve(execution);
+        if (profile != null) {
+            execution.fieldWeights().putAll(profile.textWeights());
+        }
+    }
+
+    @Override
     public void apply(SearchExecution execution) {
-        String profile = execution.request().scoringProfile();
-        if (profile == null || profile.isBlank()) {
+        ScoringProfile profile = ScoringProfile.resolve(execution);
+        if (profile == null || !profile.hasFunctions()) {
             return;
         }
-        for (JsonNode defined : execution.index().definition().json().path("scoringProfiles")) {
-            if (profile.equals(SearchJson.text(defined, "name"))) {
-                return;
-            }
+        LiveIndex index = execution.index();
+        Instant now = Instant.now();
+        for (SearchHit hit : execution.hits()) {
+            hit.score(hit.score() * profile.multiplier(index.document(hit.ordinal()), now));
         }
-        throw SearchException.badRequest("Unknown scoring profile '" + profile + "'.\r\nParameter name: "
-            + "scoringProfile");
     }
 }

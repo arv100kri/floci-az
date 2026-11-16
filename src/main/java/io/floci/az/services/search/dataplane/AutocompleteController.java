@@ -12,8 +12,7 @@ import java.util.Map;
 
 /**
  * Autocomplete ({@code docs/search.autocomplete} by GET, {@code docs/search.post.autocomplete} by POST). The
- * parameters of either form are handed to the engine's {@code SuggestStage} under their POST names; the stage is a
- * stub that answers 501 until autocomplete lands.
+ * parameters of either form are handed to the engine's {@code SuggestStage} under their POST names.
  */
 @ApplicationScoped
 public class AutocompleteController {

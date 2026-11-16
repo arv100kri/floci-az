@@ -25,14 +25,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 /**
  * Runs a {@link QueryNode} tree over one index, inside the index's read lock. Leaf text is analyzed per target field
  * with the field's search analyzer; a word matches when it matches in any target field, and its score is the sum of
  * its BM25 scores in the fields it matches, each multiplied by the field's weight (1 unless a scoring profile sets
- * text weights). Prefix, wildcard, regex and fuzzy queries are unscored: each match scores 1.
+ * text weights). Prefix, wildcard and regex queries are unscored: each match scores 1. Fuzzy queries are scored over
+ * their expansions ({@link FuzzyExpansion}); regular expressions use Lucene's syntax ({@link LuceneRegExp}).
  *
  * <p>A node that analyzes to nothing in every field (a word the analyzer drops, such as a stop word) is absent: it
  * neither matches nor excludes anything, as Lucene drops such clauses.</p>
@@ -66,8 +65,7 @@ public final class QueryExecutor {
             case Prefix prefix -> multiTerm(prefix.prefix(), (indexed, normalized) -> indexed.startsWith(normalized));
             case Wildcard wildcard -> wildcard(wildcard);
             case Regex regex -> regex(regex);
-            case Fuzzy fuzzy -> multiTerm(fuzzy.term(),
-                (indexed, normalized) -> withinEdits(indexed, normalized, fuzzy.maxEdits()));
+            case Fuzzy fuzzy -> fuzzy(fuzzy);
             case Bool bool -> bool(bool);
             case FieldScoped scoped -> new QueryExecutor(index, List.of(searchableField(scoped.fieldPath())),
                 fieldWeights).execute(scoped.query());
@@ -203,36 +201,29 @@ public final class QueryExecutor {
     }
 
     private ScoredDocs wildcard(Wildcard wildcard) {
-        return multiTermPattern(wildcard.pattern(), pattern -> {
-            StringBuilder regex = new StringBuilder();
-            for (char character : pattern.toCharArray()) {
-                switch (character) {
-                    case '*' -> regex.append(".*");
-                    case '?' -> regex.append('.');
-                    default -> regex.append(Pattern.quote(String.valueOf(character)));
-                }
-            }
-            return Pattern.compile(regex.toString(), Pattern.DOTALL);
-        });
+        return multiTermPattern(wildcard.pattern(), LuceneRegExp::wildcard);
     }
 
     private ScoredDocs regex(Regex regex) {
-        return multiTermPattern(regex.pattern(), pattern -> {
-            try {
-                return Pattern.compile(pattern);
-            } catch (PatternSyntaxException e) {
-                throw SearchException.badRequest("Invalid regular expression '" + pattern + "': "
-                    + e.getDescription());
-            }
-        });
+        return multiTermPattern(regex.pattern(), LuceneRegExp::compile);
     }
 
-    private ScoredDocs multiTermPattern(String text, Function<String, Pattern> compiler) {
+    private ScoredDocs multiTermPattern(String text, Function<String, LuceneRegExp> compiler) {
         ScoredDocs result = null;
         for (SearchFieldDefinition field : fields) {
-            Pattern pattern = compiler.apply(analyzer(field).normalizeTerm(text));
-            ScoredDocs fieldResult = expand(field, (indexed, normalized) -> pattern.matcher(indexed).matches(), text);
+            LuceneRegExp pattern = compiler.apply(analyzer(field).normalizeTerm(text));
+            ScoredDocs fieldResult = expand(field, (indexed, normalized) -> pattern.matches(indexed), text);
             result = constantUnion(result, fieldResult);
+        }
+        return result;
+    }
+
+    private ScoredDocs fuzzy(Fuzzy fuzzy) {
+        ScoredDocs result = null;
+        for (SearchFieldDefinition field : fields) {
+            String normalized = analyzer(field).normalizeTerm(fuzzy.term());
+            result = union(result, FuzzyExpansion.score(index.invertedField(field.path()), normalized,
+                fuzzy.maxEdits(), bm25, weight(field)));
         }
         return result;
     }
@@ -358,32 +349,6 @@ public final class QueryExecutor {
 
     /** Whether {@code a} is within {@code maxEdits} insertions, deletions, substitutions or transpositions of b. */
     static boolean withinEdits(String a, String b, int maxEdits) {
-        if (Math.abs(a.length() - b.length()) > maxEdits) {
-            return false;
-        }
-        int[][] distance = new int[a.length() + 1][b.length() + 1];
-        for (int i = 0; i <= a.length(); i++) {
-            distance[i][0] = i;
-        }
-        for (int j = 0; j <= b.length(); j++) {
-            distance[0][j] = j;
-        }
-        for (int i = 1; i <= a.length(); i++) {
-            int rowMinimum = Integer.MAX_VALUE;
-            for (int j = 1; j <= b.length(); j++) {
-                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
-                int value = Math.min(Math.min(distance[i - 1][j] + 1, distance[i][j - 1] + 1),
-                    distance[i - 1][j - 1] + cost);
-                if (i > 1 && j > 1 && a.charAt(i - 1) == b.charAt(j - 2) && a.charAt(i - 2) == b.charAt(j - 1)) {
-                    value = Math.min(value, distance[i - 2][j - 2] + 1);
-                }
-                distance[i][j] = value;
-                rowMinimum = Math.min(rowMinimum, value);
-            }
-            if (rowMinimum > maxEdits) {
-                return false;
-            }
-        }
-        return distance[a.length()][b.length()] <= maxEdits;
+        return EditDistance.within(a, b, maxEdits);
     }
 }
