@@ -38,8 +38,14 @@ final class SearchServiceDocuments {
     private SearchServiceDocuments() {
     }
 
-    /** The resource, with its endpoint under {@code endpointSuffix}, the search DNS suffix of its cloud. */
-    static Map<String, Object> document(SearchServiceRecord service, String endpointSuffix) {
+    /**
+     * The resource, with its endpoint under {@code endpointSuffix} (the search DNS suffix of its cloud) and its
+     * read-only {@code privateEndpointConnections} and {@code sharedPrivateLinkResources}, each entry as its own GET
+     * answers it.
+     */
+    static Map<String, Object> document(SearchServiceRecord service, String endpointSuffix,
+                                        List<Map<String, Object>> privateEndpointConnections,
+                                        List<Map<String, Object>> sharedPrivateLinkResources) {
         Map<String, Object> document = new LinkedHashMap<>();
         document.put("id", service.id());
         document.put("name", service.name());
@@ -51,7 +57,8 @@ final class SearchServiceDocuments {
         if (identity != null) {
             document.put("identity", identity);
         }
-        document.put("properties", properties(service, endpointSuffix));
+        document.put("properties", properties(service, endpointSuffix, privateEndpointConnections,
+            sharedPrivateLinkResources));
         document.put("systemData", systemData(service.audit()));
         return document;
     }
@@ -60,7 +67,9 @@ final class SearchServiceDocuments {
      * The service's {@code properties}, in the order Azure answers them. The serverless SKU has no replicas,
      * partitions or compute type, so they are left out for it.
      */
-    private static Map<String, Object> properties(SearchServiceRecord service, String endpointSuffix) {
+    private static Map<String, Object> properties(SearchServiceRecord service, String endpointSuffix,
+                                                  List<Map<String, Object>> privateEndpointConnections,
+                                                  List<Map<String, Object>> sharedPrivateLinkResources) {
         ServiceSettings settings = service.settings();
         Map<String, Object> properties = new LinkedHashMap<>();
         if (settings.replicaCount() != null) {
@@ -79,8 +88,8 @@ final class SearchServiceDocuments {
         }
         properties.put("publicNetworkAccess", settings.publicNetworkAccess());
         properties.put("networkRuleSet", networkRuleSet(settings.networkRuleSet()));
-        properties.put("privateEndpointConnections", List.of());
-        properties.put("sharedPrivateLinkResources", List.of());
+        properties.put("privateEndpointConnections", privateEndpointConnections);
+        properties.put("sharedPrivateLinkResources", sharedPrivateLinkResources);
         properties.put("eTag", eTag(service));
         Map<String, Object> encryption = new LinkedHashMap<>();
         encryption.put("enforcement", settings.cmkEnforcement());

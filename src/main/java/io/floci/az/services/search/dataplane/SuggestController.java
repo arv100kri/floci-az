@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.floci.az.services.search.engine.SearchEngine;
 import io.floci.az.services.search.engine.index.LiveIndex;
 import io.floci.az.services.search.model.SearchJson;
+import io.floci.az.services.search.security.DocumentPermissions;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
@@ -45,7 +46,8 @@ public class SuggestController {
 
     private Response suggest(SearchCall call, ObjectNode parameters) {
         LiveIndex index = indexes.resolve(call);
-        ObjectNode body = index.read(live -> engine.pipeline().suggestStage().suggest(live, parameters));
+        ObjectNode body = index.read(live -> engine.pipeline().suggestStage().suggest(live,
+            DocumentPermissions.restrict(live, parameters)));
         return SearchResponses.json(call, 200, SearchResponses.withIndexContext(call, index.name(), "docs(*)", body));
     }
 

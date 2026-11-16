@@ -11,6 +11,7 @@ import io.floci.az.core.arm.ArmResourceStore.Written;
 import io.floci.az.core.arm.ArmResources;
 import io.floci.az.core.arm.ArmScope;
 import io.floci.az.core.storage.StorageFactory;
+import io.quarkus.arc.All;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
@@ -48,7 +49,12 @@ public class NetworkService {
     private static final String PROVIDER = "/providers/Microsoft.Network/";
     private static final String SUBNET_TYPE = "Microsoft.Network/virtualNetworks/subnets";
 
+    private static final String PRIVATE_ENDPOINT_TYPE = "Microsoft.Network/privateEndpoints";
+
     private final ArmResourceStore<Map<String, Object>> store;
+
+    /** The services that approve the private endpoint connections to their own resources. */
+    private final List<PrivateLinkResourceOwner> owners;
 
     /**
      * Held by every VNet and subnet PUT and by every DELETE: a VNet's inline {@code subnets} and its child subnet
@@ -58,9 +64,10 @@ public class NetworkService {
     private final Object subnetLock = new Object();
 
     @Inject
-    public NetworkService(StorageFactory storageFactory) {
+    public NetworkService(StorageFactory storageFactory, @All List<PrivateLinkResourceOwner> owners) {
         this.store = ArmResourceStore.create(storageFactory, STORE, documentType(),
                 document -> String.valueOf(document.get("id")), key -> false);
+        this.owners = List.copyOf(owners);
     }
 
     @SuppressWarnings("unchecked")
@@ -183,6 +190,37 @@ public class NetworkService {
 
     public void clear() {
         store.clear();
+    }
+
+    /** Every stored private endpoint, in every subscription, as its GET answers it. */
+    public List<Map<String, Object>> privateEndpoints() {
+        return store.all().stream()
+                .map(Stored::value)
+                .filter(NetworkService::isPrivateEndpoint)
+                .map(NetworkService::stripInternal)
+                .toList();
+    }
+
+    /** The stored resource {@code id} names (a subnet, say), as its GET answers it; empty for none or a non-ARM id. */
+    public Optional<Map<String, Object>> resource(String id) {
+        return ArmResourceId.parse(id).flatMap(this::find).map(NetworkService::stripInternal);
+    }
+
+    /**
+     * Applies {@code change} to the stored private endpoint {@code id}, atomically with respect to every other write:
+     * how a {@link PrivateLinkResourceOwner} records an approval, a rejection or a removal of a connection on the
+     * endpoint that holds it. Empty when there is no such endpoint.
+     */
+    public Optional<Map<String, Object>> updatePrivateEndpoint(String id, UnaryOperator<Map<String, Object>> change) {
+        Optional<ArmResourceId> parsed = ArmResourceId.parse(id);
+        if (parsed.isEmpty() || find(parsed.get()).filter(NetworkService::isPrivateEndpoint).isEmpty()) {
+            return Optional.empty();
+        }
+        return store.update(parsed.get(), change).map(stored -> stripInternal(stored.value()));
+    }
+
+    private static boolean isPrivateEndpoint(Map<String, Object> resource) {
+        return PRIVATE_ENDPOINT_TYPE.equalsIgnoreCase(String.valueOf(resource.get("type")));
     }
 
     private Response createOrUpdateResource(AzureRequest request, ArmResourceId rid, String tail) {
@@ -1382,8 +1420,10 @@ public class NetworkService {
             String peId = firstCasing(existing, "id", requestedId);
             Map<String, Object> properties = new LinkedHashMap<>(cast(body.get("properties")));
 
-            List<Object> connections = normalizeConnections(peId, properties.get("privateLinkServiceConnections"), false);
-            List<Object> manualConnections = normalizeConnections(peId, properties.get("manualPrivateLinkServiceConnections"), true);
+            List<Object> connections = normalizeConnections(peId, properties.get("privateLinkServiceConnections"), false,
+                    storedConnections(existing, "privateLinkServiceConnections"));
+            List<Object> manualConnections = normalizeConnections(peId, properties.get("manualPrivateLinkServiceConnections"), true,
+                    storedConnections(existing, "manualPrivateLinkServiceConnections"));
             properties.put("privateLinkServiceConnections", connections);
             properties.put("manualPrivateLinkServiceConnections", manualConnections);
             properties.putIfAbsent("customDnsConfigs", List.of());
@@ -1450,7 +1490,7 @@ public class NetworkService {
         return Optional.empty();
     }
 
-    private List<Object> normalizeConnections(String peId, Object raw, boolean manual) {
+    private List<Object> normalizeConnections(String peId, Object raw, boolean manual, List<?> stored) {
         if (!(raw instanceof List<?> list)) {
             return new ArrayList<>();
         }
@@ -1461,7 +1501,10 @@ public class NetworkService {
             conn.put("id", peId + "/privateLinkServiceConnections/" + name);
             Map<String, Object> connProps = new LinkedHashMap<>(cast(conn.get("properties")));
             Map<String, Object> state = new LinkedHashMap<>(cast(connProps.get("privateLinkServiceConnectionState")));
-            if (manual) {
+            String target = bodyString(connProps, "privateLinkServiceId", null);
+            if (target != null && owners.stream().anyMatch(owner -> owner.ownsConnectionsTo(target))) {
+                state = ownedState(stored, name, target, manual);
+            } else if (manual) {
                 state.putIfAbsent("status", "Pending");
                 state.putIfAbsent("description", "Awaiting approval");
             } else {
@@ -1475,6 +1518,39 @@ public class NetworkService {
             result.add(conn);
         }
         return result;
+    }
+
+    /**
+     * The state of a connection to a resource a {@link PrivateLinkResourceOwner} owns: the state the endpoint already
+     * holds for the same connection (same name, same target), since only the owner changes it, else the state a new
+     * connection starts in, whatever the body sends.
+     */
+    private static Map<String, Object> ownedState(List<?> stored, String name, String target, boolean manual) {
+        for (Object item : stored) {
+            Map<String, Object> previous = cast(item);
+            Map<String, Object> previousProps = cast(previous.get("properties"));
+            if (name.equalsIgnoreCase(String.valueOf(previous.get("name")))
+                    && sameId(target, previousProps.get("privateLinkServiceId"))) {
+                return new LinkedHashMap<>(cast(previousProps.get("privateLinkServiceConnectionState")));
+            }
+        }
+        Map<String, Object> state = new LinkedHashMap<>();
+        state.put("status", manual ? "Pending" : "Approved");
+        state.put("description", manual ? "Awaiting approval" : "Auto-approved");
+        return state;
+    }
+
+    /** The connections the stored endpoint holds in {@code field}; empty for a new endpoint. */
+    private static List<?> storedConnections(Optional<Map<String, Object>> existing, String field) {
+        return existing.map(pe -> cast(pe.get("properties")).get(field))
+                .filter(List.class::isInstance)
+                .map(value -> (List<?>) value)
+                .orElse(List.of());
+    }
+
+    /** Whether two ARM ids name one resource: ids compare ignoring case. */
+    private static boolean sameId(String id, Object other) {
+        return other instanceof String text && id.equalsIgnoreCase(text);
     }
 
     private Response deletePrivateEndpoint(String sub, String rg, String peName) {

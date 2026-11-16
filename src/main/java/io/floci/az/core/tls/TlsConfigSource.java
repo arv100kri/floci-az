@@ -317,8 +317,21 @@ public class TlsConfigSource implements ConfigSource {
                 "localhost.floci-az.io", "*.localhost.floci-az.io",
                 "*." + publicSuffix(CloudSuffix.KEYVAULT), "*." + publicSuffix(CloudSuffix.MHSM),
                 "*." + publicSuffix(CloudSuffix.ACR), "host.docker.internal"));
+        all.addAll(searchHosts());
         all.addAll(customHostnames);
         return all;
+    }
+
+    /**
+     * {@code *.search.windows.net} and the search suffix of every other cloud in the catalog, so an HTTPS client can
+     * call a search service at its host-style endpoint, {@code https://{service}.search.windows.net}.
+     */
+    private static List<String> searchHosts() {
+        List<String> hosts = new ArrayList<>();
+        for (CloudProfile cloud : CloudCatalog.all()) {
+            cloud.suffix(CloudSuffix.SEARCH).ifPresent(suffix -> hosts.add("*." + suffix));
+        }
+        return hosts;
     }
 
     private List<String> extractCustomHostnames() {

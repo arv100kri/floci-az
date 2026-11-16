@@ -41,7 +41,10 @@ public class SearchArmSurface implements ArmSurfaceProvider {
         new ArmSurface(NAMESPACE, ArmLane.PROVIDER_SERVICE, List.of(
             ArmResourceType.resourceGroup(NAMESPACE, "searchServices", LocationPolicy.REQUIRED)
                 .withName(SERVICE_NAME)
-                .withGlobalName(SERVICE_DNS_NAME))));
+                .withGlobalName(SERVICE_DNS_NAME),
+            ArmResourceType.child(NAMESPACE, "searchServices/networkSecurityPerimeterConfigurations"),
+            ArmResourceType.child(NAMESPACE, "searchServices/privateEndpointConnections"),
+            ArmResourceType.child(NAMESPACE, "searchServices/sharedPrivateLinkResources"))));
 
     @Override
     public List<ArmSurface> armSurfaces() {

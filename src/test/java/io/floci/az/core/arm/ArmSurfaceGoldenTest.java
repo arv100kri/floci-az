@@ -114,6 +114,9 @@ class ArmSurfaceGoldenTest {
         Microsoft.Resources/deployments                                                RESOURCE_GROUP  OPTIONAL  ARM_HANDLER
         Microsoft.Resources/resourceGroups                                             SUBSCRIPTION    REQUIRED  ARM_HANDLER
         Microsoft.Search/searchServices                                                RESOURCE_GROUP  REQUIRED  PROVIDER_SERVICE
+        Microsoft.Search/searchServices/networkSecurityPerimeterConfigurations         RESOURCE_GROUP  OPTIONAL  PROVIDER_SERVICE
+        Microsoft.Search/searchServices/privateEndpointConnections                     RESOURCE_GROUP  OPTIONAL  PROVIDER_SERVICE
+        Microsoft.Search/searchServices/sharedPrivateLinkResources                     RESOURCE_GROUP  OPTIONAL  PROVIDER_SERVICE
         Microsoft.Sql/servers                                                          RESOURCE_GROUP  REQUIRED  FILTER
         Microsoft.Sql/servers/connectionPolicies                                       RESOURCE_GROUP  OPTIONAL  FILTER
         Microsoft.Sql/servers/databases                                                RESOURCE_GROUP  OPTIONAL  FILTER

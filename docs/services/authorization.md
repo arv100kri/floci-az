@@ -9,8 +9,9 @@ management group, a subscription, a resource group and any resource.
 
 > **Stored; evaluated only where a data plane asks.** Role assignments are kept and answered the way Azure answers
 > them. floci-az can also evaluate them the way Azure RBAC does (see [Evaluation](#evaluation)), for a data plane to
-> consult under `parity-overrides.strict-rbac`. No service consults it yet, so today an assignment grants nothing and
-> its absence denies nothing.
+> consult under `parity-overrides.strict-rbac`. The Azure AI Search data plane consults it for bearer callers (see
+> [Azure AI Search security](search-security.md#roles)); no other service does yet, so elsewhere an assignment grants
+> nothing and its absence denies nothing.
 
 > **HTTP-only, no Docker.** Assignments are kept in the `authorization` store, which follows the global
 > `storage.mode`, so they survive a restart in a persistent mode. They are keyed by their lowercased id.
