@@ -30,6 +30,12 @@ public class RoleAssignmentStore {
 
     static final String STORE = "authorization";
 
+    /**
+     * Internal: the tenant an assignment at a management group or the tenant root was made in. floci-az keeps one
+     * management-group hierarchy per tenant, and those scopes' ids do not name the tenant. Never answered.
+     */
+    static final String TENANT_KEY = "_tenant";
+
     /** One role assignment: the ARM body the handler answers with. */
     @RegisterForReflection
     public record RoleAssignment(@JsonValue Map<String, Object> body) {
@@ -43,6 +49,17 @@ public class RoleAssignmentStore {
         public String id() {
             return String.valueOf(body.get("id"));
         }
+    }
+
+    /**
+     * A stored assignment as an evaluator reads it: the properties that decide what it grants, typed.
+     *
+     * @param scope    the assignment's {@code scope} property: {@code "/"} at the tenant root
+     * @param tenantId the tenant recorded for an assignment at the tenant root or a management group; null when none
+     *                 was recorded, which means the default tenant
+     */
+    public record AssignmentView(String id, String scope, String roleDefinitionId, String principalId,
+                                 String condition, String tenantId) {
     }
 
     private final ArmResourceStore<RoleAssignment> store;
@@ -66,6 +83,11 @@ public class RoleAssignmentStore {
         return store.all().stream().map(stored -> stored.value().body()).toList();
     }
 
+    /** Every assignment, typed for evaluation. */
+    public synchronized List<AssignmentView> views() {
+        return store.all().stream().map(stored -> view(stored.value().body())).toList();
+    }
+
     public synchronized void put(Map<String, Object> body) {
         store.put(new RoleAssignment(body));
     }
@@ -82,5 +104,16 @@ public class RoleAssignmentStore {
 
     public synchronized void clear() {
         store.clear();
+    }
+
+    private static AssignmentView view(Map<String, Object> body) {
+        Map<?, ?> properties = body.get("properties") instanceof Map<?, ?> map ? map : Map.of();
+        return new AssignmentView(text(body.get("id")), text(properties.get("scope")),
+                text(properties.get("roleDefinitionId")), text(properties.get("principalId")),
+                text(properties.get("condition")), text(body.get(TENANT_KEY)));
+    }
+
+    private static String text(Object value) {
+        return value instanceof String string ? string : null;
     }
 }

@@ -38,7 +38,9 @@ class ParityConfigTest {
         Map.entry("strict-locations", ParityLevel.STRICT),
         Map.entry("strict-names", ParityLevel.STRICT),
         Map.entry("strict-tokens", ParityLevel.STRICT),
-        Map.entry("tenant-scoping", ParityLevel.AZURE));
+        Map.entry("tenant-scoping", ParityLevel.AZURE),
+        Map.entry("strict-rbac", ParityLevel.STRICT),
+        Map.entry("strict-network", ParityLevel.STRICT));
 
     private record Override(String name, Predicate<EmulatorConfig> resolver) {
     }
@@ -54,7 +56,9 @@ class ParityConfigTest {
         new Override("strict-locations", EmulatorConfig::strictLocations),
         new Override("strict-names", EmulatorConfig::strictNames),
         new Override("strict-tokens", EmulatorConfig::strictTokens),
-        new Override("tenant-scoping", EmulatorConfig::tenantScoping));
+        new Override("tenant-scoping", EmulatorConfig::tenantScoping),
+        new Override("strict-rbac", EmulatorConfig::strictRbac),
+        new Override("strict-network", EmulatorConfig::strictNetwork));
 
     private static EmulatorConfig config(ParityLevel level, Map<String, Boolean> explicit, String authMode) {
         return config(level, explicit, authMode, false);
@@ -87,6 +91,8 @@ class ParityConfigTest {
         when(overrides.strictNames()).thenReturn(Optional.ofNullable(explicit.get("strict-names")));
         when(overrides.strictTokens()).thenReturn(Optional.ofNullable(explicit.get("strict-tokens")));
         when(overrides.tenantScoping()).thenReturn(Optional.ofNullable(explicit.get("tenant-scoping")));
+        when(overrides.strictRbac()).thenReturn(Optional.ofNullable(explicit.get("strict-rbac")));
+        when(overrides.strictNetwork()).thenReturn(Optional.ofNullable(explicit.get("strict-network")));
         return config;
     }
 

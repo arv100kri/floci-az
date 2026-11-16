@@ -3823,7 +3823,7 @@ public class BlobServiceHandler implements AzureServiceHandler, Resettable {
      * default {@code Get Blob Properties} documents for a blob with no content type specified - for one
      * that is missing, empty, or not a valid media type.
      */
-    private static String usableContentType(String contentType) {
+    static String usableContentType(String contentType) {
         if (contentType == null || contentType.isBlank()) {
             return MediaType.APPLICATION_OCTET_STREAM;
         }
@@ -4144,6 +4144,30 @@ public class BlobServiceHandler implements AzureServiceHandler, Resettable {
         return written.get();
     }
 
+    /**
+     * The stored blobs and Data Lake paths of a container whose names start with {@code prefix}, for
+     * {@link BlobReader}. Taken under the lease monitor every write holds, so a multi-key change in flight (a
+     * directory rename, a recursive delete, Delete Container) is seen entirely or not at all. Staged blocks,
+     * snapshots and unflushed Data Lake appends live under other key prefixes and are never part of it.
+     *
+     * @return empty when the container does not exist
+     */
+    Optional<List<StoredObject>> storedBlobs(String accountName, String containerName, String prefix) {
+        AtomicReference<Optional<List<StoredObject>>> snapshot = new AtomicReference<>(Optional.empty());
+        leaseService.exclusively(() -> {
+            if (store.get(nsKey(accountName, containerName)).isPresent()) {
+                String keyPrefix = objKey(accountName, containerName, prefix);
+                snapshot.set(Optional.of(store.scan(key -> key.startsWith(keyPrefix))));
+            }
+        });
+        return snapshot.get();
+    }
+
+    /** One stored blob or Data Lake path, for {@link BlobReader}; writes replace a record atomically. */
+    Optional<StoredObject> storedBlob(String accountName, String containerName, String blobName) {
+        return store.get(objKey(accountName, containerName, blobName));
+    }
+
     public void setHierarchicalNamespaceEnabled(String accountName, boolean enabled) {
         hierarchicalNamespaceOverrides.put(accountName, enabled);
     }
@@ -4152,7 +4176,7 @@ public class BlobServiceHandler implements AzureServiceHandler, Resettable {
         hierarchicalNamespaceOverrides.remove(accountName);
     }
 
-    private boolean isHierarchicalNamespaceEnabled(String accountName) {
+    boolean isHierarchicalNamespaceEnabled(String accountName) {
         return hierarchicalNamespaceOverrides.getOrDefault(accountName,
                 config.services().blob().hierarchicalNamespaceAccounts().contains(accountName));
     }
@@ -4192,7 +4216,7 @@ public class BlobServiceHandler implements AzureServiceHandler, Resettable {
         return metadata;
     }
 
-    private static Map<String, String> userMetadata(Map<String, String> storedMetadata) {
+    static Map<String, String> userMetadata(Map<String, String> storedMetadata) {
         return storedMetadata.entrySet().stream()
                 .filter(entry -> entry.getKey().startsWith(USER_METADATA_PREFIX))
                 .collect(Collectors.toMap(

@@ -156,6 +156,25 @@ public interface EmulatorConfig {
     }
 
     /**
+     * Whether a data plane that honours Azure RBAC refuses a Bearer caller whose role assignments do not grant the
+     * action or data action the request needs. Without it, role assignments are stored and answered but grant and
+     * deny nothing. On from {@code parity: strict}; {@code parity-overrides.strict-rbac} overrides it either way.
+     */
+    default boolean strictRbac() {
+        return parityOverrides().strictRbac().orElse(parity().includes(ParityLevel.STRICT));
+    }
+
+    /**
+     * Whether a service that models network isolation enforces it: public network access, IP firewall rules and
+     * private endpoint connections decide which callers reach its data plane. Without it, those settings are
+     * stored and answered only. On from {@code parity: strict}; {@code parity-overrides.strict-network} overrides it
+     * either way.
+     */
+    default boolean strictNetwork() {
+        return parityOverrides().strictNetwork().orElse(parity().includes(ParityLevel.STRICT));
+    }
+
+    /**
      * Whether ARM locations are canonical, as Azure stores them: a PUT or PATCH body's {@code location} is
      * normalized for the subscription's cloud ({@code "East US"} becomes {@code eastus}) before its handler runs,
      * so it is stored and echoed that way and every name built from it (ACI and AKS FQDNs, the AKS node resource
@@ -224,6 +243,12 @@ public interface EmulatorConfig {
 
         /** Default: on from {@code parity: azure}. Read through {@link EmulatorConfig#tenantScoping()}. */
         Optional<Boolean> tenantScoping();
+
+        /** Default: on from {@code parity: strict}. Read through {@link EmulatorConfig#strictRbac()}. */
+        Optional<Boolean> strictRbac();
+
+        /** Default: on from {@code parity: strict}. Read through {@link EmulatorConfig#strictNetwork()}. */
+        Optional<Boolean> strictNetwork();
     }
 
     /** The cloud a tenant lives in when nothing else names one. */
@@ -312,6 +337,7 @@ public interface EmulatorConfig {
         ServiceStorageConfig containerApps();
         ServiceStorageConfig email();
         ServiceStorageConfig directory();
+        ServiceStorageConfig search();
     }
 
     interface ServiceStorageConfig {
@@ -346,6 +372,7 @@ public interface EmulatorConfig {
         SignalRConfig          signalr();
         CosmosServiceConfig    cosmos();
         KeyVaultConfig         keyVault();
+        SearchConfig           search();
         EventHubConfig         eventHub();
         SqlServiceConfig       sql();
         PostgresServiceConfig  postgres();
@@ -960,6 +987,51 @@ public interface EmulatorConfig {
     interface KeyVaultConfig {
         @WithDefault("true")
         boolean enabled();
+    }
+
+    /**
+     * Azure AI Search ({@code Microsoft.Search}): search services on the management plane, and their data plane at
+     * {@code {service}.search.windows.net} and {@code /{service}-search/}. The search engine runs in-process.
+     */
+    interface SearchConfig {
+        @WithDefault("true")
+        boolean enabled();
+
+        /** The most documents one index holds: an emulator guard on memory, not an Azure quota. */
+        @WithDefault("100000")
+        int maxDocumentsPerIndex();
+
+        /**
+         * The shortest interval an indexer schedule may name, in seconds. Azure's minimum is five minutes; lower it so
+         * tests do not wait for a scheduled run.
+         */
+        @WithDefault("300")
+        long indexerMinIntervalSeconds();
+
+        /** What a semantic query is answered with; the semantic ranker's model is not available outside Azure. */
+        @WithDefault("stand-in")
+        SemanticRankerMode semanticRanker();
+
+        /**
+         * An OpenAI-compatible endpoint that vectorizers and embedding skills call instead of the resource URI their
+         * definition names. Unset: such a call fails as an unreachable dependency.
+         */
+        Optional<String> modelEndpoint();
+
+        /**
+         * Test hook: read the caller's address for IP firewall rules from the {@code x-floci-az-client-ip} header
+         * instead of the transport peer, so a rule naming a public address can be tested from one machine.
+         */
+        @WithDefault("false")
+        boolean trustClientIpHeader();
+    }
+
+    /** How the search data plane answers a semantic query. */
+    enum SemanticRankerMode {
+        /** A deterministic reranker over the semantic configuration's prioritized fields stands in for the model. */
+        STAND_IN,
+        /** Semantic queries are refused, as on a service whose semantic ranker is disabled. */
+        DISABLED
     }
 
     interface SqlServiceConfig {
