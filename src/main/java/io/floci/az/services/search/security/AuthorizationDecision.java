@@ -11,9 +11,19 @@ public sealed interface AuthorizationDecision {
     /**
      * The request may proceed.
      *
-     * @param caller how the caller authenticated
+     * @param caller         how the caller authenticated
+     * @param documentAccess whose documents a read of a permission-filtered index may return; {@link
+     *                       DocumentAccess#ANONYMOUS} for an operation that reads no documents
      */
-    record Allowed(Caller caller) implements AuthorizationDecision {
+    record Allowed(Caller caller, DocumentAccess documentAccess) implements AuthorizationDecision {
+
+        public Allowed {
+            documentAccess = documentAccess == null ? DocumentAccess.ANONYMOUS : documentAccess;
+        }
+
+        public Allowed(Caller caller) {
+            this(caller, DocumentAccess.ANONYMOUS);
+        }
     }
 
     /**

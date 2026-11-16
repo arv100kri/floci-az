@@ -284,7 +284,7 @@ floci-az:
       default-tenant-id: "00000000-0000-0000-0000-000000000002"
       # issuer:                     # optional override; default {baseUrl}/{tenant}/v2.0
       token-lifetime-seconds: 3599
-      validate-tokens: false        # true: ARM requests must carry a valid token (same as parity-overrides.strict-tokens)
+      validate-tokens: false        # true: ARM and Azure AI Search requests must carry a valid token (same as parity-overrides.strict-tokens)
       validate-client-credentials: false   # true: reject unregistered clients and wrong secrets
       validate-user-credentials: false     # true: check directory passwords and account status
       # signing-key-path:           # optional; default {storage.persistent-path}/entra

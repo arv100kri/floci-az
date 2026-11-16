@@ -43,6 +43,8 @@ import java.util.function.Supplier;
 /**
  * Microsoft.Search's management plane: search services, their admin and query API keys, and
  * {@code checkNameAvailability}, as the 2026-11-01 spec defines them; earlier api-versions are answered the same way.
+ * A service's network children (private endpoint connections, private link resources, shared private links and
+ * network security perimeter configurations) are answered by {@link SearchNetworkingArm}.
  * Reached through {@code ArmHandler}'s provider lane, inside the ARM request gate, which owns each service name
  * ({@link SearchArmSurface}) before a PUT gets here.
  *
@@ -72,13 +74,14 @@ public class SearchArmService implements ArmProviderService, StoreIndexSource, G
     private final AzureDirectory directory;
     private final CloudDefaults defaults;
     private final ManagedIdentityStore identities;
+    private final SearchNetworkingArm networking;
     /** Serializes every write, so the store and the registry see writes in the same order. */
     private final Object writes = new Object();
 
     @Inject
     public SearchArmService(EmulatorConfig config, SearchServiceStore store, SearchServiceRegistry registry,
                             GlobalNameRegistry names, AzureDirectory directory, CloudDefaults defaults,
-                            ManagedIdentityStore identities) {
+                            ManagedIdentityStore identities, SearchNetworkingArm networking) {
         this.config = config;
         this.store = store;
         this.registry = registry;
@@ -86,6 +89,7 @@ public class SearchArmService implements ArmProviderService, StoreIndexSource, G
         this.directory = directory;
         this.defaults = defaults;
         this.identities = identities;
+        this.networking = networking;
     }
 
     @Override
@@ -171,9 +175,9 @@ public class SearchArmService implements ArmProviderService, StoreIndexSource, G
     // ── Resource group level ────────────────────────────────────────────────
 
     /**
-     * A service's own path, the group's service list, and the key actions under a service. Any other path under a
-     * service is a child Microsoft.Search serves elsewhere or floci-az does not serve, answered ARM 404, so a child
-     * write is never taken for a write of its parent.
+     * A service's own path, the group's service list, the key actions under a service, and its network children
+     * ({@link SearchNetworkingArm}). Any other path under a service is a child Microsoft.Search serves elsewhere or
+     * floci-az does not serve, answered ARM 404, so a child write is never taken for a write of its parent.
      */
     private Response resourceGroupPath(AzureRequest req, String path, String method, ArmResourceId id) {
         List<String> types = id.types();
@@ -187,6 +191,9 @@ public class SearchArmService implements ArmProviderService, StoreIndexSource, G
                     : Response.status(405).build();
             }
             return service(req, method, serviceId(id));
+        }
+        if (SearchNetworkingArm.serves(types.get(1))) {
+            return networkChild(req, method, id);
         }
         if (types.size() != 2) {
             return armNotFound(path);
@@ -212,6 +219,19 @@ public class SearchArmService implements ArmProviderService, StoreIndexSource, G
     /** One of a service's actions, served for its one method; the rest are {@code 405}. */
     private static Response action(String method, String expected, Supplier<Response> served) {
         return expected.equals(method) ? served.get() : Response.status(405).build();
+    }
+
+    /**
+     * A path under a service's network children ({@link SearchNetworkingArm}), for a service that exists. It runs with
+     * the service writes, so a child is never written for a service a concurrent delete is removing.
+     */
+    private Response networkChild(AzureRequest req, String method, ArmResourceId id) {
+        ArmResourceId serviceId = serviceId(id);
+        synchronized (writes) {
+            return store.get(serviceId)
+                .map(service -> networking.handle(req, method, id, service, endpointSuffix(req)))
+                .orElseGet(() -> notFound(serviceId));
+        }
     }
 
     private Response service(AzureRequest req, String method, ArmResourceId id) {
@@ -265,6 +285,7 @@ public class SearchArmService implements ArmProviderService, StoreIndexSource, G
                 return Response.noContent().build();
             }
             registry.remove(deleted.get().name());
+            networking.serviceDeleted(deleted.get());
             LOG.infov("ARM: deleted search service {0}", deleted.get().name());
             return Response.ok().build();
         }
@@ -273,7 +294,7 @@ public class SearchArmService implements ArmProviderService, StoreIndexSource, G
     private Response list(AzureRequest req, ArmScope scope) {
         String suffix = endpointSuffix(req);
         List<Map<String, Object>> value = store.list(scope).stream()
-            .map(service -> SearchServiceDocuments.document(service, suffix))
+            .map(service -> serviceDocument(service, suffix))
             .toList();
         return json(Response.ok(Map.of("value", value)));
     }
@@ -406,8 +427,14 @@ public class SearchArmService implements ArmProviderService, StoreIndexSource, G
 
     private Response document(AzureRequest req, int status, SearchServiceRecord service) {
         return json(Response.status(status)
-            .entity(SearchServiceDocuments.document(service, endpointSuffix(req)))
+            .entity(serviceDocument(service, endpointSuffix(req)))
             .header("ETag", SearchServiceDocuments.eTag(service)));
+    }
+
+    /** The service's resource, with the private endpoint connections and shared private links it has now. */
+    private Map<String, Object> serviceDocument(SearchServiceRecord service, String endpointSuffix) {
+        return SearchServiceDocuments.document(service, endpointSuffix, networking.privateEndpointConnections(service),
+            networking.sharedPrivateLinkResources(service));
     }
 
     private static Response json(Response.ResponseBuilder response) {

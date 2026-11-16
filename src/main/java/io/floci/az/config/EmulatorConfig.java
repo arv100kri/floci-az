@@ -147,8 +147,9 @@ public interface EmulatorConfig {
 
     /**
      * Whether an ARM request whose Bearer token is missing, not signed by the Entra signing key, expired, or issued
-     * for another audience is refused with {@code 401}. On from {@code parity: strict} or
-     * {@code entra.validate-tokens}; {@code parity-overrides.strict-tokens} overrides both either way.
+     * for another audience is refused with {@code 401}; the Azure AI Search data plane validates its Bearer tokens the
+     * same way. On from {@code parity: strict} or {@code entra.validate-tokens};
+     * {@code parity-overrides.strict-tokens} overrides both either way.
      */
     default boolean strictTokens() {
         return parityOverrides().strictTokens()

@@ -434,7 +434,7 @@ class SearchArmServiceTest {
     void unservedPathsUnderAServiceAreNotFound() {
         String path = service("sub-srch-child", "rg", "child-svc");
         put(path, STANDARD, 201);
-        given().when().get(path + "/privateLinkResources" + API).then().statusCode(404);
+        given().when().get(path + "/upgrade" + API).then().statusCode(404);
         given().when().get(path + "/listAdminKeys" + API).then().statusCode(405);
         given().when().get("/subscriptions/sub-srch-child/providers/Microsoft.Search/locations/westus/usages" + API)
             .then().statusCode(404);

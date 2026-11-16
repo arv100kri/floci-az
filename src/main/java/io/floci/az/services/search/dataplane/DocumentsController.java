@@ -13,6 +13,7 @@ import io.floci.az.services.search.model.IndexingResult;
 import io.floci.az.services.search.model.SearchException;
 import io.floci.az.services.search.model.SearchJson;
 import io.floci.az.services.search.model.SearchRequest;
+import io.floci.az.services.search.security.DocumentPermissions;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
@@ -64,7 +65,7 @@ public class DocumentsController {
         List<String> select = SearchRequestParser.csv(String.join(",", call.queryValues("$select")));
         ObjectNode document = index.read(live -> {
             ODataSelect projection = ODataSelect.parse(select, live.definition(), "$select");
-            IndexedDocument stored = live.document(key);
+            IndexedDocument stored = DocumentPermissions.visibleDocument(live, key);
             return stored == null ? null : projection.project(stored.source());
         });
         if (document == null) {
@@ -76,7 +77,7 @@ public class DocumentsController {
 
     public Response count(SearchCall call) {
         LiveIndex index = indexes.resolve(call);
-        return Response.ok(String.valueOf(index.documentCount()).getBytes(StandardCharsets.UTF_8))
+        return Response.ok(String.valueOf(DocumentPermissions.count(index)).getBytes(StandardCharsets.UTF_8))
             .header("Content-Type", "text/plain; charset=utf-8")
             .build();
     }

@@ -116,7 +116,7 @@ public class SearchHandler implements AzureServiceHandler, Resettable {
                 String serviceUrl = serviceUrl(request);
                 SearchCall call = new SearchCall(request, service, match.operation(), allowed.caller(),
                     match.parameters(), apiVersion, serviceUrl, requestUrl(request, serviceUrl), readBody(request));
-                yield match.endpoint().handle(call);
+                yield allowed.documentAccess().bindDuring(() -> match.endpoint().handle(call));
             }
         };
     }

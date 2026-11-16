@@ -92,8 +92,10 @@ class TlsConfigSourceCertificateGenerationTest {
             "SANs should include '*.managedhsm.azure.net' for Managed-HSM-flavored vault URLs");
         assertTrue(sans.contains("*.azurecr.io"),
             "SANs should include '*.azurecr.io' so registry clients trust {name}.azurecr.io");
-        assertEquals(10, sans.size(),
-            "Default cert should have exactly 10 SANs (localhost, 127.0.0.1, 0.0.0.0, *.localhost, localhost.floci-az.io, *.localhost.floci-az.io, *.vault.azure.net, *.managedhsm.azure.net, *.azurecr.io, host.docker.internal)");
+        assertTrue(sans.containsAll(List.of("*.search.windows.net", "*.search.azure.us", "*.search.azure.cn")),
+            "SANs should include the search suffix of every cloud so HTTPS clients trust {service}.search.windows.net");
+        assertEquals(13, sans.size(),
+            "Default cert should have exactly 13 SANs (localhost, 127.0.0.1, 0.0.0.0, *.localhost, localhost.floci-az.io, *.localhost.floci-az.io, *.vault.azure.net, *.managedhsm.azure.net, *.azurecr.io, host.docker.internal, and the search suffixes of the three clouds)");
     }
 
     @Test

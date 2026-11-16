@@ -131,7 +131,8 @@ floci-az:
     #                               # 400 NoRegisteredProviderFound
     # strict-tokens: true           # FLOCI_AZ_PARITY_OVERRIDES_STRICT_TOKENS; default on from strict or entra.validate-tokens.
     #                               # An ARM request with a missing, unsigned, expired or wrong-audience Bearer token
-    #                               # is 401. Data planes still accept any token
+    #                               # is 401, and an Azure AI Search data-plane request is refused as the service's
+    #                               # aadAuthFailureMode says. Other data planes still accept any token
     # strict-rbac: true             # FLOCI_AZ_PARITY_OVERRIDES_STRICT_RBAC; default on from strict.
     #                               # A data plane that honours Azure RBAC (Azure AI Search) refuses a Bearer caller
     #                               # whose role assignments do not grant the data action; otherwise assignments
@@ -355,7 +356,7 @@ floci-az:
       default-tenant-id: "00000000-0000-0000-0000-000000000002"
       # issuer:                     # optional override; default derived from request base URL as {baseUrl}/{tenant}/v2.0
       token-lifetime-seconds: 3599
-      validate-tokens: false        # FLOCI_AZ_SERVICES_ENTRA_VALIDATE_TOKENS: true = turn on parity-overrides.strict-tokens (ARM requests only)
+      validate-tokens: false        # FLOCI_AZ_SERVICES_ENTRA_VALIDATE_TOKENS: true = turn on parity-overrides.strict-tokens (ARM requests and the Azure AI Search data plane)
       validate-client-credentials: false   # FLOCI_AZ_SERVICES_ENTRA_VALIDATE_CLIENT_CREDENTIALS: true = unknown client_id and wrong secrets are rejected (AADSTS700016, AADSTS7000215)
       validate-user-credentials: false     # FLOCI_AZ_SERVICES_ENTRA_VALIDATE_USER_CREDENTIALS: true = validate directory passwords and account status
       # signing-key-path:           # optional; default {storage.persistent-path}/entra

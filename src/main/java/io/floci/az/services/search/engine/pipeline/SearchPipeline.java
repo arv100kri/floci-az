@@ -27,6 +27,7 @@ public final class SearchPipeline {
     public static SearchPipeline standard() {
         return new SearchPipeline(List.of(
             new FilterStage(),
+            new PermissionTrimmingStage(),
             new TextRetrievalStage(),
             new VectorRetrievalStage(),
             new FusionStage(),
