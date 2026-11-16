@@ -146,6 +146,7 @@ public final class IndexDefinitionParser {
         for (String section : TRAILING_OBJECT_SECTIONS) {
             output.set(section, objectSection(input, section));
         }
+        output.set("vectorSearch", VectorSearchValidator.normalize(output.get("vectorSearch"), skeleton));
         Iterator<Map.Entry<String, JsonNode>> extras = input.fields();
         while (extras.hasNext()) {
             Map.Entry<String, JsonNode> extra = extras.next();

@@ -12,6 +12,7 @@ import io.floci.az.services.search.model.IndexUpdateValidator;
 import io.floci.az.services.search.model.SearchException;
 import io.floci.az.services.search.model.SearchIndexDefinition;
 import io.floci.az.services.search.model.SearchJson;
+import io.floci.az.services.search.model.VectorizerSecrets;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
@@ -44,7 +45,7 @@ public class IndexesController {
         List<LiveIndex> page = indexes.subList(Math.min(skip, indexes.size()),
             (int) Math.min(indexes.size(), (long) Math.min(skip, indexes.size()) + top));
         for (LiveIndex index : page) {
-            ObjectNode definition = representation(index);
+            ObjectNode definition = VectorizerSecrets.redact(representation(index));
             if (all) {
                 value.add(definition);
             } else {
@@ -68,7 +69,7 @@ public class IndexesController {
 
     public Response get(SearchCall call) {
         LiveIndex index = require(call);
-        return SearchResponses.jsonBuilder(call, 200, entity(call, index))
+        return SearchResponses.jsonBuilder(call, 200, VectorizerSecrets.redact(entity(call, index)))
             .header("ETag", index.etag())
             .build();
     }
@@ -91,8 +92,8 @@ public class IndexesController {
                 return created(call, indexes.create(definition));
             }
             LiveIndex index = existing.get();
-            SearchIndexDefinition updated = IndexDefinitionParser.parse(keepEncryptionKey(body, index), name,
-                engine.analyzers());
+            SearchIndexDefinition updated = IndexDefinitionParser.parse(VectorizerSecrets.restore(
+                keepEncryptionKey(body, index), index.definition()), name, engine.analyzers());
             IndexUpdateValidator.validate(index.definition(), updated,
                 "true".equalsIgnoreCase(call.query("allowIndexDowntime")));
             indexes.update(index, updated);
