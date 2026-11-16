@@ -7,6 +7,7 @@ import io.floci.az.services.search.engine.index.LiveIndex;
 import io.floci.az.services.search.engine.odata.ODataOrderBy;
 import io.floci.az.services.search.engine.odata.ODataSelect;
 import io.floci.az.services.search.engine.query.ScoredDocs;
+import io.floci.az.services.search.engine.vector.VectorSearchContext;
 import io.floci.az.services.search.model.SearchException;
 import io.floci.az.services.search.model.SearchFieldDefinition;
 import io.floci.az.services.search.model.SearchIndexDefinition;
@@ -49,6 +50,8 @@ public final class SearchExecution {
     private final Map<String, ArrayNode> facets = new LinkedHashMap<>();
     private final Map<String, JsonNode> annotations = new LinkedHashMap<>();
     private final Map<String, String> headers = new LinkedHashMap<>();
+    private final BitSet countOnlyMatches = new BitSet();
+    private VectorSearchContext vectorSearch = VectorSearchContext.empty();
     private BitSet filterMatches;
     private ScoredDocs filterScores;
     private ScoredDocs textResults;
@@ -171,6 +174,23 @@ public final class SearchExecution {
     /** The ranked lists of the vector queries, for fusion. */
     public List<RankedResults> vectorResults() {
         return vectorResults;
+    }
+
+    /** The request's vector queries, their resolved vectors and the lists retrieved for them. */
+    public VectorSearchContext vectorSearch() {
+        return vectorSearch;
+    }
+
+    public void vectorSearch(VectorSearchContext value) {
+        vectorSearch = value;
+    }
+
+    /**
+     * Matching documents that count toward {@code @odata.count} and facets but are never returned: in a hybrid query
+     * with {@code countAndFacetMode} {@code countAllResults}, the text matches beyond {@code maxTextRecallSize}.
+     */
+    public BitSet countOnlyMatches() {
+        return countOnlyMatches;
     }
 
     /** Every matching document with its score, after fusion. */

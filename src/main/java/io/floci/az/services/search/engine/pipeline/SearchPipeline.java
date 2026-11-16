@@ -2,6 +2,7 @@ package io.floci.az.services.search.engine.pipeline;
 
 import io.floci.az.services.search.engine.EngineSettings;
 import io.floci.az.services.search.engine.index.LiveIndex;
+import io.floci.az.services.search.engine.vector.VectorSearchContext;
 import io.floci.az.services.search.model.SearchRequest;
 
 import java.util.List;
@@ -50,8 +51,10 @@ public final class SearchPipeline {
 
     /** Runs {@code request} over {@code index}. */
     public SearchOutcome run(LiveIndex index, SearchRequest request, EngineSettings settings) {
+        VectorSearchContext vectors = VectorSearchContext.prepare(index.definition(), request, settings);
         return index.read(live -> {
             SearchExecution execution = new SearchExecution(request, live, settings);
+            execution.vectorSearch(vectors);
             for (SearchStage stage : stages) {
                 stage.prepare(execution);
             }

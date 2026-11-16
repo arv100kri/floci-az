@@ -5,6 +5,7 @@ import io.floci.az.services.search.engine.analysis.Analyzer;
 import io.floci.az.services.search.engine.analysis.AnalyzerRegistry;
 import io.floci.az.services.search.engine.analysis.IndexAnalysis;
 import io.floci.az.services.search.engine.analysis.Token;
+import io.floci.az.services.search.engine.vector.UnstoredVectors;
 import io.floci.az.services.search.model.IndexingResult;
 import io.floci.az.services.search.model.SearchFieldDefinition;
 import io.floci.az.services.search.model.SearchIndexDefinition;
@@ -240,7 +241,8 @@ public final class LiveIndex {
 
     private IndexingResult mergeInto(int ordinal, String key, ObjectNode partial, Map<String, ObjectNode> upserts,
                                      Set<String> deletes) {
-        ObjectNode merged = DocumentCoercer.merge(documents.get(ordinal).source(), partial);
+        ObjectNode merged = UnstoredVectors.dropOmitted(DocumentCoercer.merge(documents.get(ordinal).source(), partial),
+            partial, definition);
         replace(ordinal, key, merged);
         record(key, merged, upserts, deletes);
         return IndexingResult.succeeded(key, 200);

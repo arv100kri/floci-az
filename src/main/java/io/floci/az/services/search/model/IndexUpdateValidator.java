@@ -57,6 +57,7 @@ public final class IndexUpdateValidator {
             }
         }
         validateSuggesters(existing, updated);
+        VectorSearchValidator.validateUpdate(existing, updated);
     }
 
     private static void validateSuggesters(SearchIndexDefinition existing, SearchIndexDefinition updated) {

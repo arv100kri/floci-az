@@ -8,6 +8,8 @@ public enum SearchErrorCode {
     MISSING_API_VERSION(400, "MissingApiVersionParameter"),
     INVALID_API_VERSION(400, "InvalidApiVersionParameter"),
     INVALID_REQUEST(400, "InvalidRequestParameter"),
+    // A vectorizer that fails at query time is reported with an empty code, as Azure's responses show.
+    VECTORIZATION_FAILED(400, ""),
     UNAUTHORIZED(401, "Unauthorized"),
     FORBIDDEN(403, "Forbidden"),
     RESOURCE_NOT_FOUND(404, "ResourceNotFound"),

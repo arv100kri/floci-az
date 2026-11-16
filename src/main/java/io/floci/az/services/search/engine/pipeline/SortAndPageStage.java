@@ -19,7 +19,7 @@ public final class SortAndPageStage implements SearchStage {
     @Override
     public void apply(SearchExecution execution) {
         List<SearchHit> hits = execution.hits();
-        execution.totalCount(hits.size());
+        execution.totalCount(hits.size() + execution.countOnlyMatches().cardinality());
         hits.sort(comparator(execution));
 
         SearchRequest request = execution.request();

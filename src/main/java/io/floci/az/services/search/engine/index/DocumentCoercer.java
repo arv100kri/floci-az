@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.floci.az.services.search.engine.vector.VectorDimensions;
 import io.floci.az.services.search.model.EdmType;
 import io.floci.az.services.search.model.SearchException;
 import io.floci.az.services.search.model.SearchFieldDefinition;
@@ -261,12 +262,9 @@ public final class DocumentCoercer {
         if (!value.isArray()) {
             throw cannotConvert(value, field);
         }
-        boolean packedBits = "packedBit".equals(field.vectorEncoding());
-        int expected = packedBits ? (field.dimensions() + 7) / 8 : field.dimensions();
-        if (value.size() != expected) {
-            throw SearchException.badRequest("The request is invalid. Details: The vector field '" + field.path()
-                + "' dimensionality must match the field definition's 'dimensions' property. Expected: " + expected
-                + ". Actual: " + value.size() + ".");
+        if (value.size() != VectorDimensions.expectedLength(field)) {
+            throw SearchException.badRequest("The request is invalid. Details: "
+                + VectorDimensions.mismatch(field, value.size()));
         }
         ArrayNode output = NODES.arrayNode();
         for (JsonNode element : value) {
