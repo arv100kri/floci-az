@@ -103,7 +103,7 @@ class SearchRoutingTest {
     void featuresNotEmulatedYetAnswer501() {
         admin().get("/svc-search/knowledgesources" + API).then().statusCode(501)
             .body("error.code", equalTo("NotImplemented"));
-        admin().get("/svc-search/indexers('x')/search.status" + API).then().statusCode(501)
+        admin().get("/svc-search/knowledgesources" + API).then().statusCode(501)
             .body("error.code", equalTo("NotImplemented"));
         admin().body("{}").post("/svc-search/knowledgebases('kb')/retrieve" + API).then().statusCode(501);
     }
