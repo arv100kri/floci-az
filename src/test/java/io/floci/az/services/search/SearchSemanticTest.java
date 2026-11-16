@@ -191,7 +191,9 @@ class SearchSemanticTest {
     }
 
     @Test
-    void aServiceWhoseSemanticPlanIsDisabledRefusesSemanticQueries() {
+    void aServiceWhoseSemanticPlanIsDisabledAnswersSemanticQueriesAsTheFreePlan() {
+        // Learn, "Enable or disable semantic ranker billing": "Existing services with semanticSearch set to
+        // disabled are automatically treated as free."
         String arm = "/subscriptions/sub-semantic/resourceGroups/rg-semantic/providers/Microsoft.Search/"
             + "searchServices/semoff";
         given().contentType("application/json")
@@ -206,18 +208,8 @@ class SearchSemanticTest {
 
         String semantic = "{\"search\": \"rooftop pool\", \"queryType\": \"semantic\"}";
         admin(key).body(semantic).post("/semoff-search/indexes('hotels')/docs/search.post.search" + API).then()
-            .statusCode(400)
-            .body("error.code", equalTo("InvalidRequestParameter"))
-            .body("error.message", containsString("Semantic search is not enabled for this service."));
-        admin(key).body("{\"search\": \"pool\", \"semanticQuery\": \"rooftop pool\"}")
-            .post("/semoff-search/indexes('hotels')/docs/search.post.search" + API).then().statusCode(400);
-        admin(key).body("{\"search\": \"rooftop pool\"}")
-            .post("/semoff-search/indexes('hotels')/docs/search.post.search" + API).then().statusCode(200);
-
-        given().contentType("application/json").body("{\"properties\":{\"semanticSearch\":\"free\"}}")
-            .patch(arm + "?api-version=2025-05-01").then().statusCode(200);
-        admin(key).body(semantic).post("/semoff-search/indexes('hotels')/docs/search.post.search" + API).then()
             .statusCode(200)
+            .header("x-floci-az-semantic-ranker", equalTo("stand-in"))
             .body("value[0].id", equalTo("3"));
     }
 }

@@ -2,6 +2,7 @@ package io.floci.az.core.tls;
 
 import io.floci.az.config.EmulatorConfig;
 import io.floci.az.core.BannerLogger;
+import io.quarkus.runtime.LaunchMode;
 import io.quarkus.runtime.Startup;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
@@ -16,6 +17,7 @@ import io.vertx.core.streams.WriteStream;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.Config;
 import org.jboss.logging.Logger;
 
 import java.time.Duration;
@@ -32,13 +34,21 @@ import java.util.function.Consumer;
 /**
  * A TCP proxy server that enables HTTP and HTTPS on the same port.
  *
- * <p>When TLS is enabled, Quarkus serves HTTP on an internal port ({@value HTTP_BACKEND_PORT})
- * and HTTPS on another internal port ({@value HTTPS_BACKEND_PORT}). This proxy listens on the
- * public floci-az port and inspects the first byte of each incoming connection:
+ * <p>When TLS is enabled, Quarkus serves HTTP and HTTPS on two internal loopback ports, free ports
+ * {@link TlsConfigSource} picks at startup. This proxy listens on the public floci-az port and
+ * inspects the first byte of each incoming connection:
  * <ul>
- *   <li>{@code 0x16} (TLS ClientHello) → proxy to HTTPS backend (port {@value HTTPS_BACKEND_PORT})</li>
- *   <li>Anything else → proxy to HTTP backend (port {@value HTTP_BACKEND_PORT})</li>
+ *   <li>{@code 0x16} (TLS ClientHello) → proxy to the internal HTTPS listener</li>
+ *   <li>Anything else → proxy to the internal HTTP listener</li>
  * </ul>
+ *
+ * <p>Every forwarded connection opens with a PROXY protocol header ({@link ProxyProtocolHeader})
+ * naming the client's address and the address it connected to. The internal listeners read it
+ * ({@code quarkus.http.proxy.use-proxy-protocol}, which TlsConfigSource turns on with TLS), so a
+ * request's remote address is the client's own and not this proxy's loopback address: Search's
+ * network firewall and Container Apps' internal ingress decide on it. A connection made to an
+ * internal port directly must therefore send such a header itself. floci-az makes none: it reaches
+ * itself through the public port, like any other client.
  *
  * <p>The same protocol-detecting handler is also bound on the configurable
  * {@code floci-az.tls.https-port} (443 by default). Azure SDKs default to {@code https://}
@@ -64,8 +74,8 @@ public class TlsProxyServer {
     /** TLS record content type for Handshake (ClientHello). */
     private static final byte TLS_HANDSHAKE = 0x16;
 
-    private static final int HTTP_BACKEND_PORT = TlsConfigSource.HTTP_INTERNAL_PORT;
-    private static final int HTTPS_BACKEND_PORT = TlsConfigSource.HTTPS_INTERNAL_PORT;
+    /** Where the internal listeners are reached: TlsConfigSource binds them to the loopback address. */
+    private static final String BACKEND_HOST = "127.0.0.1";
 
     private final Vertx vertx;
     private final EmulatorConfig config;
@@ -83,11 +93,12 @@ public class TlsProxyServer {
     private static final int MAX_REMEMBERED_CLIENTS = 1024;
 
     @Inject
-    public TlsProxyServer(Vertx vertx, EmulatorConfig config) {
-        this(vertx, config, HTTP_BACKEND_PORT, HTTPS_BACKEND_PORT);
+    public TlsProxyServer(Vertx vertx, EmulatorConfig config, Config runtimeConfig) {
+        this(vertx, config, internalPort(runtimeConfig, LaunchMode.current(), false),
+                internalPort(runtimeConfig, LaunchMode.current(), true));
     }
 
-    /** Visible for testing — lets tests point the proxy at backends on non-default ports. */
+    /** Visible for testing: lets tests point the proxy at backends of their own. */
     TlsProxyServer(Vertx vertx, EmulatorConfig config, int httpBackendPort, int httpsBackendPort) {
         this(vertx, config, httpBackendPort, httpsBackendPort, null);
     }
@@ -103,8 +114,29 @@ public class TlsProxyServer {
         startIfTlsEnabled();
     }
 
+    /**
+     * The port of Quarkus's internal HTTP listener, or of its HTTPS one when {@code secure}, read
+     * the way Quarkus reads it: {@code quarkus.http.port} and {@code quarkus.http.ssl-port}, or
+     * {@code quarkus.http.test-port} and {@code quarkus.http.test-ssl-port} in a test run. Reading
+     * the effective value, rather than the one TlsConfigSource proposed, follows a system property
+     * or environment variable that overrides it. {@code -1} when unset.
+     */
+    static int internalPort(Config config, LaunchMode launchMode, boolean secure) {
+        String prefix = launchMode == LaunchMode.TEST ? "quarkus.http.test-" : "quarkus.http.";
+        return config.getOptionalValue(prefix + (secure ? "ssl-port" : "port"), Integer.class).orElse(-1);
+    }
+
     private void startIfTlsEnabled() {
         if (!config.tls().enabled()) {
+            return;
+        }
+        if (httpBackendPort <= 0 || httpsBackendPort <= 0) {
+            // TlsConfigSource gives both listeners a fixed port when it sees TLS enabled. Port 0
+            // makes Quarkus bind a random one, which this proxy has no way to learn.
+            LOG.errorv("TLS proxy: not started: the internal HTTP and HTTPS ports are {0} and {1}. Set "
+                    + "floci-az.tls.enabled as a system property or environment variable, and leave "
+                    + "quarkus.http.port and quarkus.http.ssl-port unset or set to fixed ports.",
+                    String.valueOf(httpBackendPort), String.valueOf(httpsBackendPort));
             return;
         }
 
@@ -155,7 +187,8 @@ public class TlsProxyServer {
 
     /**
      * Builds the shared connect handler that peeks the first byte to detect TLS and pipes the
-     * connection to the matching backend. A single instance is reused across all listen ports.
+     * connection to the matching backend, behind a PROXY protocol header naming the client. A
+     * single instance is reused across all listen ports.
      */
     private Handler<NetSocket> buildConnectHandler() {
         return frontSocket -> {
@@ -176,7 +209,7 @@ public class TlsProxyServer {
                         ? frontSocket.remoteAddress().hostAddress() : "unknown";
 
                 // Connect to the appropriate backend
-                client.connect(backendPort, "127.0.0.1").onComplete(ar -> {
+                client.connect(backendPort, BACKEND_HOST).onComplete(ar -> {
                     if (ar.succeeded()) {
                         NetSocket backSocket = ar.result();
 
@@ -191,8 +224,12 @@ public class TlsProxyServer {
                                     chunk -> observer.server(chunk.getBytes()));
                         }
 
-                        // Send the initial buffer that we already read
-                        backSocket.write(buffer);
+                        // The PROXY header goes first, as the backend reads the client's address
+                        // from it, then the initial buffer that we already read. Both go straight
+                        // to the backend: the observer has seen the buffer, and the header is not
+                        // the client's.
+                        backSocket.write(ProxyProtocolHeader.of(frontSocket.remoteAddress(),
+                                frontSocket.localAddress()).appendBuffer(buffer));
 
                         // Bi-directional pipe — pipeTo handles end-of-stream
                         // propagation and will resume the paused frontSocket.

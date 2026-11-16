@@ -16,6 +16,7 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -27,7 +28,10 @@ import java.util.TreeMap;
 /**
  * Faceted navigation, per Learn's "Add faceted navigation" and "Faceted navigation examples": each expression of the
  * request's {@code facets} is counted over every document the query and filter matched, a document counting once per
- * bucket however many of its values (a collection, or a subfield of a complex collection) fall in it.
+ * bucket however many of its values (a collection, or a subfield of a complex collection) fall in it. In a hybrid
+ * query with {@code countAndFacetMode} {@code countAllResults} that includes the text matches beyond
+ * {@code maxTextRecallSize} ({@link SearchExecution#countOnlyMatches()}): per "Create a hybrid query", counts and
+ * facets then "include all documents that matched the text query", the set {@code @odata.count} counts.
  * <ul>
  *   <li>value facets list distinct values as {@code {"count", "value"}}, the {@code count} most frequent (10 by
  *       default, every one with {@code count:0}), ordered by {@code sort} (count descending by default; ties by
@@ -51,11 +55,12 @@ public final class FacetStage implements SearchStage {
             expressions.add(FacetExpression.parse(expression, execution.index().definition()));
         }
         LiveIndex index = execution.index();
+        List<Integer> counted = countedOrdinals(execution);
         for (FacetExpression expression : expressions) {
             List<String> path = List.of(expression.field().path().split("/"));
-            List<Set<Object>> documentValues = new ArrayList<>(execution.hits().size());
-            for (SearchHit hit : execution.hits()) {
-                IndexedDocument document = index.document(hit.ordinal());
+            List<Set<Object>> documentValues = new ArrayList<>(counted.size());
+            for (int ordinal : counted) {
+                IndexedDocument document = index.document(ordinal);
                 documentValues.add(values(DocumentValues.valueAt(document.values(), path)));
             }
             ArrayNode buckets;
@@ -68,6 +73,19 @@ public final class FacetStage implements SearchStage {
             }
             execution.facets().put(expression.name(), buckets);
         }
+    }
+
+    /** The documents facets count: every hit, and the matches that count toward {@code @odata.count} only. */
+    private static List<Integer> countedOrdinals(SearchExecution execution) {
+        BitSet countOnly = execution.countOnlyMatches();
+        List<Integer> ordinals = new ArrayList<>(execution.hits().size() + countOnly.cardinality());
+        for (SearchHit hit : execution.hits()) {
+            ordinals.add(hit.ordinal());
+        }
+        for (int ordinal = countOnly.nextSetBit(0); ordinal >= 0; ordinal = countOnly.nextSetBit(ordinal + 1)) {
+            ordinals.add(ordinal);
+        }
+        return ordinals;
     }
 
     /** The distinct facetable values of one document. */

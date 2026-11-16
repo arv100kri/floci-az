@@ -25,6 +25,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -55,6 +56,13 @@ class VectorizerClientTest {
     private record Reply(int status, String body) {
     }
 
+    @Test
+    void closingTheClientStopsItsHttpClient() throws InterruptedException {
+        HttpClient http = HttpClient.newHttpClient();
+        new VectorizerClient(http).close();
+        assertThat(http.awaitTermination(Duration.ofSeconds(5)), is(true));
+    }
+
     @BeforeEach
     void startStub() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -67,6 +75,7 @@ class VectorizerClientTest {
     @AfterEach
     void stopStub() {
         server.stop(0);
+        client.close();
     }
 
     private void handle(HttpExchange exchange) throws IOException {

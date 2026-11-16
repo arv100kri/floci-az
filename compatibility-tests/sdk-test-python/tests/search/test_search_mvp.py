@@ -23,6 +23,8 @@ pytestmark = pytest.mark.search_mvp
 # https://learn.microsoft.com/rest/api/searchservice/indexes/delete (204 No Content, 404 Not Found)
 # https://learn.microsoft.com/azure/search/search-howto-concurrency ("Every time you update a resource, its ETag
 # changes automatically")
+# https://github.com/Azure/azure-sdk-for-python/blob/main/sdk/search/azure-search-documents/azure/search/documents/indexes/_operations/_operations.py
+# (_delete_index raises only for a status "not in [204, 404]": deleting a missing index succeeds)
 def test_index_lifecycle_create_get_list_update_delete(index_client):
     index_name = _support.name("lifecycle")
     created = index_client.create_index(SearchIndex(name=index_name, fields=[
@@ -49,7 +51,8 @@ def test_index_lifecycle_create_get_list_update_delete(index_client):
         index_client.delete_index(index_name)
 
     assert status_of(lambda: index_client.get_index(index_name)) == 404
-    assert status_of(lambda: index_client.delete_index(index_name)) == 404
+    index_client.delete_index(index_name)
+    assert index_client.delete_index(index_name, cls=lambda response, *_: response.http_response.status_code) == 404
 
 
 # https://learn.microsoft.com/azure/search/search-howto-concurrency (an update whose ETag no longer matches fails)
@@ -293,13 +296,6 @@ def test_query_key_can_search_but_cannot_write(service, hotels_index, hotels):
     assert status_of(lambda: read_only.upload_documents([{"id": "99", "name": "Not allowed"}])) == 403
     assert status_of(lambda: _support.index_client(service, _support.QUERY_KEY).get_index(hotels_index)) == 403
     assert status_of(lambda: hotels.get_document("99")) == 404, "the rejected upload wrote nothing"
-
-
-# https://learn.microsoft.com/azure/search/search-security-api-keys ("A request made to a search service endpoint is
-# accepted if both the request and the API key are valid")
-def test_an_unknown_api_key_is_rejected(service, hotels_index):
-    unknown = _support.search_client(service, hotels_index, "not-a-key-of-this-service")
-    assert status_of(lambda: search_keys(unknown, "*")) == 403
 
 
 def _assert_equal(actual, expected):

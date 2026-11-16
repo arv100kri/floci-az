@@ -45,4 +45,4 @@ EXPOSE 4577
 HEALTHCHECK --interval=5s --timeout=3s --retries=10 CMD ["/usr/local/bin/healthcheck.sh"]
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["/app/application", "-Dquarkus.http.host=0.0.0.0"]
+CMD ["/app/application"]

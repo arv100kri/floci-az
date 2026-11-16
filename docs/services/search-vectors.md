@@ -1,8 +1,9 @@
 # Azure AI Search: vector and hybrid search
 
-This page covers vector fields, vector queries, hybrid queries and vectorizers in the floci-az Azure AI Search data
-plane (`{service}.search.windows.net` or `/{service}-search/`). It follows the public REST API and is checked with
-`azure-search-documents` for Java, Python and JavaScript (the `search-vector` tests of the compatibility suites).
+This page covers vector fields, vector queries, hybrid queries and vectorizers in the floci-az
+[Azure AI Search](search.md) data plane (`{service}.search.windows.net` or `/{service}-search/`). It follows the
+public REST API and is checked with `azure-search-documents` for Java, Python and JavaScript (the `search-vector`
+tests of the compatibility suites).
 
 Vector search runs in floci-az's own engine: no Lucene, no vector database, no sidecar. Every vector query is an exact
 nearest-neighbour search, so results are deterministic.
@@ -46,7 +47,8 @@ nearest-neighbour search, so results are deterministic.
 - **Several lists** (several vector queries, several fields, or a text query beside them) are fused with Reciprocal Rank
   Fusion: each list adds `weight / (60 + rank)`. A single vector list keeps its similarity scores.
 - **Hybrid queries**: the text list is the BM25 ranking cut to `hybridSearch.maxTextRecallSize` (1,000 by default).
-  With `countAndFacetMode: countAllResults` (the default) `@odata.count` also counts the text matches beyond that window.
+  With `countAndFacetMode: countAllResults` (the default) `@odata.count` and facets also count the text matches beyond
+  that window.
   `search: "*"` adds a text list that matches every document; an absent or empty `search` makes a pure vector query.
 - **Compression**: on an HNSW field, candidates are compared on int8 or binary-quantized vectors (truncated to
   `truncationDimension`); with rescoring the best `k * oversampling` are rescored on the full-precision vectors, so the
@@ -81,7 +83,10 @@ floci-az:
       model-endpoint: http://localhost:11434/v1   # FLOCI_AZ_SERVICES_SEARCH_MODEL_ENDPOINT
 ```
 
-## Deviations from Azure
+[Skills and the model endpoint](search.md#skills-and-the-model-endpoint) shows every caller of the model endpoint,
+the Azure OpenAI embedding skill included.
+
+## Differences from Azure
 
 - Every vector query is an exact nearest-neighbour search; HNSW parameters are stored but do not change results. On
   small indexes Azure's HNSW results are normally exact too.

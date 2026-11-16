@@ -6,6 +6,7 @@ import io.vertx.core.buffer.Buffer;
 import io.vertx.core.net.NetServer;
 import io.vertx.core.net.NetServerOptions;
 import io.vertx.core.net.PemKeyCertOptions;
+import io.vertx.core.net.SocketAddress;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Tests for {@link TlsProxyServer}'s multi-port binding and first-byte protocol detection.
+ * Tests for {@link TlsProxyServer}'s multi-port binding, first-byte protocol detection and the
+ * PROXY protocol header it opens every forwarded connection with.
  *
  * <p>Uses ephemeral ports for the public port, the HTTPS port, and the stub HTTP/HTTPS
  * backends, so nothing privileged (443) is bound and the test never collides with a running
@@ -165,18 +167,43 @@ class TlsProxyServerTest {
         assertThrows(TimeoutException.class, () -> reported.get(1, TimeUnit.SECONDS));
     }
 
+    @Test
+    @Timeout(20)
+    void backendsSeeTheClientsOwnAddressAndPortThroughTheProxyProtocolHeader() throws Exception {
+        int httpBe = freePort();
+        int httpsBe = freePort();
+        int publicPort = freePort();
+        httpBackend = startClientAddressBackend(httpBe, "PLAIN");
+        httpsBackend = startClientAddressBackend(httpsBe, "TLS");
+
+        proxy = new TlsProxyServer(vertx, configWith(true, publicPort, 0), httpBe, httpsBe);
+
+        // Without the header a backend would see the proxy's own connection, from another port.
+        awaitListening(publicPort);
+        try (Socket client = new Socket("127.0.0.1", publicPort)) {
+            assertEquals("PLAIN 127.0.0.1:" + client.getLocalPort(), exchange(client, (byte) 'G'));
+        }
+        try (Socket client = new Socket("127.0.0.1", publicPort)) {
+            assertEquals("TLS 127.0.0.1:" + client.getLocalPort(), exchange(client, TLS_HANDSHAKE));
+        }
+    }
+
     // ---- helpers ----
 
     private CertificateGenerator.GeneratedCertificate tlsBackendCertificate;
     private int tlsProxyPort;
 
-    /** A TLS echo server behind the proxy; the future completes with the first rejection reported. */
+    /**
+     * A TLS echo server behind the proxy, reading the PROXY protocol header the proxy opens every connection with, as
+     * Quarkus's internal HTTPS listener does; the future completes with the first rejection reported.
+     */
     private CompletableFuture<TlsHandshakeObserver.Rejection> proxyToTlsEcho() throws Exception {
         tlsBackendCertificate = new CertificateGenerator().generateCertificate(List.of("localhost", "127.0.0.1"));
         int httpsBe = freePort();
-        httpsBackend = vertx.createNetServer(new NetServerOptions().setSsl(true).setKeyCertOptions(new PemKeyCertOptions()
-                .setCertValue(Buffer.buffer(tlsBackendCertificate.chainPem()))
-                .setKeyValue(Buffer.buffer(tlsBackendCertificate.privateKeyPem()))));
+        httpsBackend = vertx.createNetServer(new NetServerOptions().setSsl(true).setUseProxyProtocol(true)
+                .setKeyCertOptions(new PemKeyCertOptions()
+                        .setCertValue(Buffer.buffer(tlsBackendCertificate.chainPem()))
+                        .setKeyValue(Buffer.buffer(tlsBackendCertificate.privateKeyPem()))));
         httpsBackend.connectHandler(sock -> sock.handler(sock::write));
         httpsBackend.listen(httpsBe, "127.0.0.1").toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
 
@@ -216,6 +243,25 @@ class TlsProxyServerTest {
     private NetServer startMarkerBackend(int port, String marker) throws Exception {
         NetServer server = vertx.createNetServer();
         server.connectHandler(sock -> sock.write(marker));
+        listen(server, port);
+        return server;
+    }
+
+    /**
+     * A backend that reads the PROXY protocol header as Quarkus's internal listeners do (Vert.x's
+     * own support for it), then answers with its marker and the client address the header named.
+     */
+    private NetServer startClientAddressBackend(int port, String marker) throws Exception {
+        NetServer server = vertx.createNetServer(new NetServerOptions().setUseProxyProtocol(true));
+        server.connectHandler(sock -> {
+            SocketAddress client = sock.remoteAddress();
+            sock.write(marker + " " + client.hostAddress() + ":" + client.port());
+        });
+        listen(server, port);
+        return server;
+    }
+
+    private static void listen(NetServer server, int port) throws Exception {
         CompletableFuture<Void> started = new CompletableFuture<>();
         server.listen(port, "127.0.0.1").onComplete(ar -> {
             if (ar.succeeded()) {
@@ -225,19 +271,24 @@ class TlsProxyServerTest {
             }
         });
         started.get(5, TimeUnit.SECONDS);
-        return server;
     }
 
     private String roundTrip(int proxyPort, byte firstByte) throws Exception {
         awaitListening(proxyPort);
         try (Socket sock = new Socket("127.0.0.1", proxyPort)) {
-            sock.getOutputStream().write(new byte[]{firstByte});
-            sock.getOutputStream().flush();
-            byte[] buf = new byte[64];
-            int n = sock.getInputStream().read(buf);
-            assertTrue(n > 0, "expected a marker response from the backend");
-            return new String(buf, 0, n, StandardCharsets.UTF_8);
+            return exchange(sock, firstByte);
         }
+    }
+
+    /** Sends {@code firstByte} through the proxy and returns what the backend answered. */
+    private static String exchange(Socket sock, byte firstByte) throws IOException {
+        sock.setSoTimeout(10_000);
+        sock.getOutputStream().write(new byte[]{firstByte});
+        sock.getOutputStream().flush();
+        byte[] buf = new byte[64];
+        int n = sock.getInputStream().read(buf);
+        assertTrue(n > 0, "expected a marker response from the backend");
+        return new String(buf, 0, n, StandardCharsets.UTF_8);
     }
 
     private void awaitListening(int port) throws Exception {

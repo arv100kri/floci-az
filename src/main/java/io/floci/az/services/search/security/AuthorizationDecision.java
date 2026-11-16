@@ -54,7 +54,10 @@ public sealed interface AuthorizationDecision {
         ADMIN_KEY,
         /** One of the service's query keys: document reads only. */
         QUERY_KEY,
-        /** A key the service does not know, accepted as an admin key outside strict parity. */
+        /**
+         * A key a service provisioned by a data-plane request does not know, accepted as an admin key outside strict
+         * parity.
+         */
         UNKNOWN_KEY,
         /** A Microsoft Entra bearer token. */
         BEARER_TOKEN

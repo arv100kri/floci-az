@@ -1,15 +1,16 @@
 # Azure AI Search: authentication, roles and document-level access
 
-How floci-az's Azure AI Search data plane decides who may call it, and which documents a query returns. It follows
-Learn's "Connect to Azure AI Search using keys", "Enable or disable role-based access control", "Connect using Azure
-roles", "Document-level access control" and "Query-time ACL and RBAC enforcement", the `Microsoft.Search` permission
-list, and the REST API (`specification/search` in azure-rest-api-specs).
+How floci-az's [Azure AI Search](search.md) data plane decides who may call it, and which documents a query returns.
+It follows Learn's "Connect to Azure AI Search using keys", "Enable or disable role-based access control", "Connect
+using Azure roles", "Document-level access control" and "Query-time ACL and RBAC enforcement", the `Microsoft.Search`
+permission list, and the REST API (`specification/search` in azure-rest-api-specs).
 
 Two things are always on, because they are the service's own settings: the authentication options of a service
 (`authOptions`, `disableLocalAuth`) and an index's document-level permission filters (`permissionFilterOption`).
 Two things are opt-in, like every new kind of enforcement in floci-az: validating Entra tokens
-(`parity-overrides.strict-tokens`) and evaluating role assignments (`parity-overrides.strict-rbac`). Both are on under
-`parity: strict`.
+(`parity-overrides.strict-tokens`, also turned on by `entra.validate-tokens`) and evaluating role assignments
+(`parity-overrides.strict-rbac`). Both are on under `parity: strict`. A network check runs before any of this under
+`strict-network`: see [Network isolation](search-network-isolation.md).
 
 ---
 
@@ -27,8 +28,11 @@ Two things are opt-in, like every new kind of enforcement in floci-az: validatin
 - **Both credentials on one request**: the `api-key` header wins, as Learn documents ("if you provide both in the
   same request, the API key is used").
 - **Keys**: an admin key may call every operation; a query key only reads the documents of an index (search, lookup,
-  count, suggest, autocomplete). A key the service does not know is accepted as an admin key, and refused with `403`
-  under `parity: strict`.
+  count, suggest, autocomplete). A service created through `Microsoft.Search` accepts only its own keys, the ones
+  `listAdminKeys` and `listQueryKeys` return, as Azure does: any other key is refused with `403`, so a regenerated
+  or deleted key stops working. A service only a data-plane request created holds the development keys (see
+  [Azure AI Search](search.md#1-get-a-service)) and accepts any other key as an admin key; under `parity: strict`
+  there are no such services, since a data-plane request for an unknown service is refused.
 - **Tokens**: with `strict-tokens` off (the default), a bearer token is accepted and its claims are read without
   verification, as everywhere in floci-az. With it on, the token must be signed by floci-az's Entra, within its
   lifetime, and issued for a search audience: `https://search.azure.com` (the `https://search.azure.com/.default` scope
@@ -36,7 +40,9 @@ Two things are opt-in, like every new kind of enforcement in floci-az: validatin
   without a trailing slash.
 - **The challenge** is `WWW-Authenticate: Bearer authorization_uri="{floci-az}/{tenant}/oauth2/v2.0/authorize",
   resource="https://search.azure.com"`, plus `error="invalid_token"` when a token was refused. `{tenant}` is the tenant
-  of the service's subscription. Learn documents the challenge, not its text: this text is floci-az's.
+  of the service's subscription. The resource is the search audience of the cloud the request addresses:
+  `https://search.azure.us` for `{service}.search.azure.us` and `https://search.azure.cn` for
+  `{service}.search.azure.cn`. Learn documents the challenge, not its text: this text is floci-az's.
 
 Get a token for the data plane from floci-az's Entra:
 
@@ -83,6 +89,9 @@ granted to the caller or to any group it belongs to, transitively.
 - **No ARM resource, no roles**: a service only a data-plane request created has no ARM id to assign a role at, so
   a bearer caller is refused with `403` there under `strict-rbac`; create the service through `Microsoft.Search`, or
   use a key. (Under `parity: strict` such a service does not exist at all.)
+- **Indexers** that read their data source through a managed identity (a `ResourceId=` connection string) are checked
+  too under `strict-rbac`: the service's identity needs the source's reader role, as
+  [Indexers](search.md#connection-strings) describes.
 - A denial is `403 Forbidden` naming the permission and the scope; the log line names the assignments considered.
 
 ## Document-level access

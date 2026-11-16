@@ -22,7 +22,8 @@ public record AzureRequest(
     AuthContext authContext,
     boolean secure,          // true when the request arrived over HTTPS
     String host,             // host captured before async/blocking dispatch; may be null for direct/internal requests
-    String remoteAddress,    // transport peer address; never derived from forwarded headers
+    String remoteAddress,    // transport peer address, the client's also behind the TLS proxy (which passes it on in a
+                             // PROXY protocol header); never derived from forwarded headers
     String rawPath,          // original encoded request path, without a leading slash
     String rawQuery,         // original encoded query string, without the leading "?"; null when absent
     String authority,        // host[:port] the client addressed (HTTP/1.1 Host, HTTP/2 :authority); null when unknown

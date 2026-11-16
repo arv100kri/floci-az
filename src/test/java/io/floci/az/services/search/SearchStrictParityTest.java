@@ -48,6 +48,18 @@ class SearchStrictParityTest {
     }
 
     @Test
+    void aServiceADataPlaneRequestProvisionedRefusesAnUnknownKeyToo() {
+        registry.put(new SearchServiceInfo("dpsvc", null, SearchServiceRegistry.DEV_PRIMARY_ADMIN_KEY,
+            SearchServiceRegistry.DEV_SECONDARY_ADMIN_KEY,
+            List.of(new SearchQueryKey("", SearchServiceRegistry.DEV_QUERY_KEY)), false, null, "enabled", null, null,
+            "standard"));
+        given().header("api-key", SearchServiceRegistry.DEV_PRIMARY_ADMIN_KEY).get("/dpsvc-search/indexes" + API)
+            .then().statusCode(200);
+        given().header("api-key", "some-other-key").get("/dpsvc-search/indexes" + API).then().statusCode(403)
+            .body("error.code", equalTo("Forbidden"));
+    }
+
+    @Test
     void theServicesOwnKeysWork() {
         given().header("api-key", "admin-key").get("/strictsvc-search/indexes" + API).then().statusCode(200);
         given().header("api-key", "query-key").get("/strictsvc-search/indexes" + API).then().statusCode(403);

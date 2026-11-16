@@ -251,6 +251,7 @@ All variables are optional; the default applies when unset.
 | `FLOCI_AZ_STORAGE_SERVICES_QUEUE_MODE` | _(global)_ | Storage mode for Queue Storage only |
 | `FLOCI_AZ_STORAGE_SERVICES_TABLE_MODE` | _(global)_ | Storage mode for Table Storage only |
 | `FLOCI_AZ_STORAGE_SERVICES_APP_CONFIG_MODE` | _(global)_ | Storage mode for App Configuration only |
+| `FLOCI_AZ_STORAGE_SERVICES_SEARCH_MODE` | _(global)_ | Storage mode for Azure AI Search only |
 | `FLOCI_AZ_STORAGE_SERVICES_DIRECTORY_MODE` | _(global)_ | Storage mode for the ARM tenant and subscription directory only |
 
 ### Enable / disable services
@@ -264,6 +265,7 @@ All variables are optional; the default applies when unset.
 | `FLOCI_AZ_SERVICES_APP_CONFIG_ENABLED` | `true` | Enable or disable App Configuration |
 | `FLOCI_AZ_SERVICES_COSMOS_ENABLED` | `true` | Enable or disable Cosmos DB (SQL API) |
 | `FLOCI_AZ_SERVICES_KEY_VAULT_ENABLED` | `true` | Enable or disable Key Vault |
+| `FLOCI_AZ_SERVICES_SEARCH_ENABLED` | `true` | Enable or disable Azure AI Search (management plane and data plane) |
 | `FLOCI_AZ_SERVICES_EVENT_HUB_ENABLED` | `true` | Enable or disable Event Hubs |
 | `FLOCI_AZ_SERVICES_SQL_ENABLED` | `true` | Enable or disable Azure SQL Database |
 
@@ -285,6 +287,20 @@ All variables are optional; the default applies when unset.
 | `FLOCI_AZ_SERVICES_FUNCTIONS_CONTAINER_IDLE_TIMEOUT_SECONDS` | `300` | Evict warm containers idle longer than this; `0` disables eviction |
 | `FLOCI_AZ_SERVICES_FUNCTIONS_CODE_PATH` | `~/.floci-az/functions` | Where extracted function code is stored on the host |
 | `FLOCI_AZ_SERVICES_FUNCTIONS_DOCKER_HOST_OVERRIDE` | _(unset)_ | Override the hostname function containers use to reach floci-az |
+
+### Azure AI Search
+
+| Variable | Default | Description |
+|---|---|---|
+| `FLOCI_AZ_SERVICES_SEARCH_MAX_DOCUMENTS_PER_INDEX` | `100000` | The most documents one index holds: an emulator guard, not an Azure quota |
+| `FLOCI_AZ_SERVICES_SEARCH_INDEXER_MIN_INTERVAL_SECONDS` | `300` | The shortest indexer schedule interval; lower it so tests need not wait five minutes |
+| `FLOCI_AZ_SERVICES_SEARCH_SEMANTIC_RANKER` | `stand-in` | `stand-in` answers semantic queries with a deterministic reranker; `disabled` refuses them |
+| `FLOCI_AZ_SERVICES_SEARCH_MODEL_ENDPOINT` | _(unset)_ | OpenAI-compatible embeddings endpoint for the Azure OpenAI embedding skill and vectorizers |
+| `FLOCI_AZ_SERVICES_SEARCH_TRUST_CLIENT_IP_HEADER` | `false` | Test hook: IP firewall rules read the caller's address from `x-floci-az-client-ip` |
+| `FLOCI_AZ_PARITY_OVERRIDES_STRICT_RBAC` | _(on from `strict`)_ | `true`: role assignments are enforced on the search data plane |
+| `FLOCI_AZ_PARITY_OVERRIDES_STRICT_NETWORK` | _(on from `strict`)_ | `true`: public network access, IP rules and private endpoints are enforced on the search data plane |
+
+See [Azure AI Search](../services/search.md#configuration) for what each setting does.
 
 ### Docker daemon
 

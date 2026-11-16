@@ -44,8 +44,8 @@ import java.util.Optional;
  * Link). IP rules are matched against the same address, or, when the test hook
  * {@code services.search.trust-client-ip-header} is on, against the address the {@value #CLIENT_IP_HEADER} header
  * names, so a rule that names a public address can be tested from one machine. The header never makes a caller
- * private. Behind floci-az's same-port TLS proxy ({@code floci-az.tls.enabled}) every transport peer is the loopback
- * address, so private callers are recognized only without it.
+ * private. Behind floci-az's same-port TLS proxy ({@code floci-az.tls.enabled}) the transport peer address is still the
+ * caller's: the proxy hands it to the emulator in a PROXY protocol header.
  *
  * <p>The error code and message of a refusal are not public: it is answered as the data plane's {@code 403 Forbidden}.
  */

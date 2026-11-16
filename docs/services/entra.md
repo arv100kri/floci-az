@@ -301,8 +301,9 @@ floci-az:
 | `validate-user-credentials` | `FLOCI_AZ_SERVICES_ENTRA_VALIDATE_USER_CREDENTIALS` | `false` |
 | `signing-key-path` | `FLOCI_AZ_SERVICES_ENTRA_SIGNING_KEY_PATH` | `{storage.persistent-path}/entra` |
 
-> `validate-tokens: true` turns on [token verification](arm.md#token-verification) for ARM requests. Data planes
-> still accept any Bearer token whatever its value.
+> `validate-tokens: true` turns on [token verification](arm.md#token-verification) for ARM requests and for the
+> [Azure AI Search](search-security.md#credentials) data plane. The other data planes still accept any Bearer token
+> whatever its value.
 
 > **Keep `enabled: true` unless you have a reason not to.** The OAuth2 token endpoint
 > (`/{tenant}/oauth2/v2.0/token`) is served by this service. Disabling Entra makes that endpoint

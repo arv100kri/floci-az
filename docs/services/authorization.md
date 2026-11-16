@@ -9,9 +9,11 @@ management group, a subscription, a resource group and any resource.
 
 > **Stored; evaluated only where a data plane asks.** Role assignments are kept and answered the way Azure answers
 > them. floci-az can also evaluate them the way Azure RBAC does (see [Evaluation](#evaluation)), for a data plane to
-> consult under `parity-overrides.strict-rbac`. The Azure AI Search data plane consults it for bearer callers (see
-> [Azure AI Search security](search-security.md#roles)); no other service does yet, so elsewhere an assignment grants
-> nothing and its absence denies nothing.
+> consult under `parity-overrides.strict-rbac` (on from `parity: strict`). The [Azure AI Search](search.md) data plane
+> consults it for bearer callers (see [Azure AI Search security](search-security.md#roles)), and for the managed
+> identity an indexer reads its data source through (Storage Blob Data Reader, Storage Table Data Reader or Cosmos DB
+> Account Reader on the source); no other service does yet, so elsewhere an assignment grants nothing and its absence
+> denies nothing.
 
 > **HTTP-only, no Docker.** Assignments are kept in the `authorization` store, which follows the global
 > `storage.mode`, so they survive a restart in a persistent mode. They are keyed by their lowercased id.
@@ -89,6 +91,8 @@ floci-az:
   services:
     authorization:
       enabled: true   # FLOCI_AZ_SERVICES_AUTHORIZATION_ENABLED
+  # parity-overrides:
+  #   strict-rbac: true   # FLOCI_AZ_PARITY_OVERRIDES_STRICT_RBAC; default on from parity: strict
 ```
 
 ## Examples
@@ -99,6 +103,10 @@ az role definition list --name "Key Vault Secrets User" --query "[0].id" -o tsv
 az role assignment create --assignee-object-id <principal-id> --assignee-principal-type ServicePrincipal \
   --role "Key Vault Secrets User" --scope <vault-id>
 az role assignment list --scope <vault-id>
+
+# Let a user query one Azure AI Search index; enforced under parity-overrides.strict-rbac
+az role assignment create --assignee-object-id <user-object-id> --assignee-principal-type User \
+  --role "Search Index Data Reader" --scope <search-service-id>/indexes/hotels
 ```
 
 ```hcl

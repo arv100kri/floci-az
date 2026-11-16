@@ -24,18 +24,47 @@ final class SkillHttp {
     private static final long RETRY_DELAY_MS = 50;
     private static final int EXCERPT_LENGTH = 500;
 
-    private final HttpClient client;
+    private volatile HttpClient client;
 
+    /**
+     * Outbound HTTP that builds its client on the first call, so a pipeline that never calls an endpoint starts no
+     * thread. Its owner closes it.
+     */
     SkillHttp() {
-        this(HttpClient.newBuilder()
-            .version(HttpClient.Version.HTTP_1_1)
-            .connectTimeout(Duration.ofSeconds(10))
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build());
+        this(null);
     }
 
     SkillHttp(HttpClient client) {
         this.client = client;
+    }
+
+    /**
+     * Stops the HTTP client's threads. The selector thread of an HTTP client still in use holds the context class
+     * loader it was started with, so a client the application never stops keeps that application's classes loaded.
+     */
+    void close() {
+        HttpClient current = client;
+        if (current != null) {
+            current.shutdownNow();
+        }
+    }
+
+    private HttpClient client() {
+        HttpClient current = client;
+        if (current == null) {
+            synchronized (this) {
+                current = client;
+                if (current == null) {
+                    current = HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(Duration.ofSeconds(10))
+                        .followRedirects(HttpClient.Redirect.NORMAL)
+                        .build();
+                    client = current;
+                }
+            }
+        }
+        return current;
     }
 
     /**
@@ -58,7 +87,7 @@ final class SkillHttp {
             if (attempt > 0) {
                 Thread.sleep(RETRY_DELAY_MS * attempt);
             }
-            HttpResponse<byte[]> response = client.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            HttpResponse<byte[]> response = client().send(request, HttpResponse.BodyHandlers.ofByteArray());
             reply = new Reply(response.statusCode(), response.headers().firstValue("Content-Type").orElse(null),
                 response.body() == null ? new byte[0] : response.body());
             if (!retried.contains(reply.status())) {

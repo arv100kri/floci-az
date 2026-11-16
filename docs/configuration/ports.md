@@ -30,6 +30,7 @@ All services share port 4577 and are routed by URL path prefix:
 | App Configuration | `/{account}-appconfig/` |
 | Cosmos DB | `/{account}-cosmos/` |
 | Key Vault | `/{account}-keyvault/` |
+| Azure AI Search | `/{service}-search/`, or the host `{service}.search.windows.net` |
 | Event Hubs | `/{account}-eventhub/` |
 | **Azure SQL Database** | `/{account}-sql/` or `/subscriptions/.../providers/Microsoft.Sql/...` |
 | **Azure Kubernetes Service** | `/subscriptions/.../providers/Microsoft.ContainerService/...` |

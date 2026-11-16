@@ -26,6 +26,9 @@ floci-az:
   #   resource-group-semantics: true # default: on from azure
   #   resource-group-delete: true  # default: on from azure
   #   strict-resource-groups: true # default: on from strict
+  #   strict-tokens: true          # default: on from strict or entra.validate-tokens
+  #   strict-rbac: true            # default: on from strict
+  #   strict-network: true         # default: on from strict
 
   # Cloud of the default tenant: AzureCloud | AzureUSGovernment | AzureChinaCloud
   cloud:
@@ -67,6 +70,9 @@ floci-az:
         # mode: persistent
         flush-interval-ms: 5000
       container-apps:
+        # mode: persistent
+        flush-interval-ms: 5000
+      search:                 # Azure AI Search services, indexes, documents and indexers
         # mode: persistent
         flush-interval-ms: 5000
       directory:              # ARM tenants and subscriptions
@@ -120,6 +126,12 @@ floci-az:
       mocked: true
       dns-suffix: azurecontainerapps.io
       ingress-timeout-seconds: 60
+    search:                           # Azure AI Search; see the service page for every setting
+      enabled: true
+      max-documents-per-index: 100000
+      indexer-min-interval-seconds: 300
+      semantic-ranker: stand-in
+      # model-endpoint: http://localhost:11434/v1
 ```
 
 ## Key Environment Variables
@@ -134,6 +146,9 @@ floci-az:
 | `FLOCI_AZ_PARITY_OVERRIDES_RESOURCE_GROUP_SEMANTICS` | _(on from `azure`)_ | Resource-group re-PUT answers `200`, a resource PUT creates a missing group, and groups persist in the directory store |
 | `FLOCI_AZ_PARITY_OVERRIDES_RESOURCE_GROUP_DELETE` | _(on from `azure`)_ | Resource-group `DELETE` is a `202` long-running operation that deletes every resource in the group; a write into a group being deleted is `409`, and `/resources` also lists Monitor, Event Grid and Email resources |
 | `FLOCI_AZ_PARITY_OVERRIDES_STRICT_RESOURCE_GROUPS` | _(on from `strict`)_ | Refuse a request for a resource under a missing group with `404 ResourceGroupNotFound`; groups persist in the directory store |
+| `FLOCI_AZ_PARITY_OVERRIDES_STRICT_TOKENS` | _(on from `strict` or `entra.validate-tokens`)_ | Refuse an ARM request whose Bearer token is missing or invalid with `401`; the Azure AI Search data plane validates its tokens too |
+| `FLOCI_AZ_PARITY_OVERRIDES_STRICT_RBAC` | _(on from `strict`)_ | Enforce role assignments where a data plane honours Azure RBAC: Azure AI Search |
+| `FLOCI_AZ_PARITY_OVERRIDES_STRICT_NETWORK` | _(on from `strict`)_ | Enforce network isolation where a service models it: Azure AI Search |
 | `FLOCI_AZ_CLOUD_DEFAULT` | `AzureCloud` | Cloud of the default tenant. Endpoints, issuers and DNS suffixes stay the public cloud's for now |
 | `FLOCI_AZ_STORAGE_MODE` | `memory` | Global storage mode |
 | `FLOCI_AZ_STORAGE_PATH` | `/app/data` | Persistence directory |
@@ -142,12 +157,14 @@ floci-az:
 | `FLOCI_AZ_STORAGE_SERVICES_TABLE_MODE` | _(global)_ | Per-service table mode |
 | `FLOCI_AZ_STORAGE_SERVICES_APP_CONFIG_MODE` | _(global)_ | Per-service App Configuration mode |
 | `FLOCI_AZ_STORAGE_SERVICES_CONTAINER_APPS_MODE` | _(global)_ | Per-service Container Apps mode |
+| `FLOCI_AZ_STORAGE_SERVICES_SEARCH_MODE` | _(global)_ | Per-service Azure AI Search mode |
 | `FLOCI_AZ_STORAGE_SERVICES_DIRECTORY_MODE` | _(global)_ | Per-service mode of the ARM tenant and subscription directory |
 | `FLOCI_AZ_SERVICES_FUNCTIONS_EPHEMERAL` | `false` | Fresh container per invocation |
 | `FLOCI_AZ_SERVICES_FUNCTIONS_CONTAINER_IDLE_TIMEOUT_SECONDS` | `300` | Evict warm containers idle longer than this (seconds); `0` disables eviction |
 | `FLOCI_AZ_SERVICES_BLOB_HIERARCHICAL_NAMESPACE_ACCOUNTS` | `devstoreaccount1` | Comma-separated accounts with hierarchical namespace enabled by default |
 | `FLOCI_AZ_SERVICES_APP_CONFIG_ENABLED` | `true` | Enable/disable App Configuration |
 | `FLOCI_AZ_SERVICES_CONTAINER_APPS_MOCKED` | `true` | Keep Container Apps ARM state without Docker runtimes |
+| `FLOCI_AZ_SERVICES_SEARCH_ENABLED` | `true` | Enable/disable Azure AI Search; its other settings are on the [Azure AI Search](../../services/search.md#configuration) page |
 | `FLOCI_AZ_SERVICES_FUNCTIONS_CODE_PATH` | `~/.floci-az/functions` | Function code directory |
 | `FLOCI_AZ_DOCKER_DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker daemon socket |
 | `FLOCI_AZ_DOCKER_ENDPOINT_MODE` | `auto` | How sidecar containers are addressed: `auto` (container name or IP and internal port inside Docker, `localhost` and the published port otherwise) or `published` (the Docker daemon's host and the published port, for remote daemons such as docker-in-docker or kubedock) |

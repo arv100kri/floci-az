@@ -22,7 +22,9 @@ import com.azure.resourcemanager.search.models.SearchServiceUpdate;
 import com.azure.resourcemanager.search.models.Sku;
 import com.azure.resourcemanager.search.models.SkuName;
 import com.azure.resourcemanager.search.models.UnavailableNameReason;
+import com.azure.search.documents.SearchClient;
 import com.azure.search.documents.indexes.SearchIndexClient;
+import com.azure.search.documents.models.SearchOptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
@@ -218,9 +220,23 @@ class SearchManagementCompatibilityTest {
                 .listIndexNames().forEach(name -> { })));
     }
 
-    // https://learn.microsoft.com/rest/api/searchmanagement/services/delete (200 OK or 204 No Content)
+    // https://learn.microsoft.com/azure/search/search-security-api-keys ("A request made to a search service endpoint
+    // is accepted if both the request and the API key are valid")
+    // https://learn.microsoft.com/rest/api/searchservice/http-status-codes ("403 Forbidden: Returned when
+    // authorization fails")
     @Test
     @Order(7)
+    void anUnknownApiKeyIsRejected() {
+        SearchClient unknown = SearchTestSupport.searchClient(SERVICE, "hotels", "not-a-key-of-this-service");
+        assertEquals(403, statusOf(() -> SearchTestSupport.searchKeys(unknown,
+                new SearchOptions().setSearchText("*"))));
+        assertEquals(403, statusOf(() -> SearchTestSupport.indexClient(SERVICE, "not-a-key-of-this-service")
+                .listIndexNames().forEach(name -> { })));
+    }
+
+    // https://learn.microsoft.com/rest/api/searchmanagement/services/delete (200 OK or 204 No Content)
+    @Test
+    @Order(8)
     void deleteServiceRemovesIt() {
         services.delete(RESOURCE_GROUP, SERVICE);
 

@@ -3,15 +3,11 @@ package io.floci.az.services.search.skills;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import io.floci.az.services.search.indexer.MappingFunctions;
+import io.floci.az.services.search.indexer.MappingFunctions.MappingException;
 import io.floci.az.services.search.model.SearchJson;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
-import java.util.HexFormat;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -21,17 +17,14 @@ import java.util.regex.Pattern;
  * {@code urlEncode}, {@code urlDecode}, {@code fixedLengthEncode} and {@code toJson}. A function applies to each
  * element when the mapped value is an array.
  *
- * <p>{@code base64Encode} is URL-safe; with {@code useHttpServerUtilityUrlTokenEncode} (the default) it behaves like
- * .NET's {@code HttpServerUtility.UrlTokenEncode}, which ends with the number of padding characters it removed, and
- * otherwise drops the padding. {@code urlEncode} follows .NET's {@code HttpUtility.UrlEncode} ({@code <hello>} is
- * {@code %3chello%3e}). {@code fixedLengthEncode}, whose algorithm is not documented, is the lowercase hexadecimal
- * SHA-256 of the UTF-8 text: 64 characters that are valid in a document key.</p>
+ * <p>The encodings are those of an indexer's field mappings ({@link MappingFunctions}), so a function gives the same
+ * value in {@code fieldMappings} and {@code outputFieldMappings}.</p>
  */
-final class MappingFunctions {
+final class OutputMappingFunctions {
 
     private static final JsonNodeFactory NODES = JsonNodeFactory.instance;
 
-    private MappingFunctions() {
+    private OutputMappingFunctions() {
     }
 
     /**
@@ -58,15 +51,15 @@ final class MappingFunctions {
 
     private static JsonNode applyOne(String normalized, String name, JsonNode parameters, JsonNode value) {
         return switch (normalized) {
-            case "base64encode" -> NODES.textNode(base64Encode(text(value),
+            case "base64encode" -> NODES.textNode(MappingFunctions.base64Encode(text(value),
                 flag(parameters, "useHttpServerUtilityUrlTokenEncode", true)));
             case "base64decode" -> NODES.textNode(base64Decode(text(value), flag(parameters,
                 "useHttpServerUtilityUrlTokenDecode", flag(parameters, "useHttpServerUtilityUrlTokenEncode", true))));
             case "extracttokenatposition" -> NODES.textNode(extractToken(text(value), parameters));
             case "jsonarraytostringcollection" -> stringCollection(value);
-            case "urlencode" -> NODES.textNode(urlEncode(text(value)));
-            case "urldecode" -> NODES.textNode(urlDecode(text(value)));
-            case "fixedlengthencode" -> NODES.textNode(fixedLengthEncode(text(value)));
+            case "urlencode" -> NODES.textNode(MappingFunctions.urlEncode(text(value)));
+            case "urldecode" -> NODES.textNode(MappingFunctions.urlDecode(text(value)));
+            case "fixedlengthencode" -> NODES.textNode(MappingFunctions.fixedLengthEncode(text(value)));
             case "tojson" -> toJson(value);
             default -> throw new IllegalArgumentException("'" + name + "' is not a mapping function");
         };
@@ -87,38 +80,14 @@ final class MappingFunctions {
         return flag != null && flag.isBoolean() ? flag.booleanValue() : defaultValue;
     }
 
-    static String base64Encode(String text, boolean urlToken) {
-        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
-        if (bytes.length == 0) {
-            return "";
-        }
-        String encoded = Base64.getUrlEncoder().encodeToString(bytes);
-        int padding = 0;
-        while (encoded.endsWith("=")) {
-            encoded = encoded.substring(0, encoded.length() - 1);
-            padding++;
-        }
-        return urlToken ? encoded + padding : encoded;
-    }
-
-    static String base64Decode(String text, boolean urlToken) {
-        if (text.isEmpty()) {
-            return "";
-        }
-        String body = text.replace('+', '-').replace('/', '_');
-        if (urlToken) {
-            char last = body.charAt(body.length() - 1);
-            if (last < '0' || last > '2') {
-                throw new IllegalArgumentException("the value is not URL token encoded");
-            }
-            body = body.substring(0, body.length() - 1) + "=".repeat(last - '0');
-        } else {
-            body = body.replace("=", "");
-        }
+    private static String base64Decode(String text, boolean urlToken) {
         try {
-            return new String(Base64.getUrlDecoder().decode(body), StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException e) {
-            throw new IllegalArgumentException("the value is not valid base64: " + e.getMessage());
+            return MappingFunctions.base64Decode(text, urlToken);
+        } catch (MappingException e) {
+            // OutputFieldMappings ends the error with its own period.
+            String message = e.getMessage();
+            throw new IllegalArgumentException(message.endsWith(".")
+                ? message.substring(0, message.length() - 1) : message, e);
         }
     }
 
@@ -154,58 +123,6 @@ final class MappingFunctions {
             }
         }
         return array;
-    }
-
-    /** .NET {@code HttpUtility.UrlEncode}: letters, digits and {@code -_.!*()} kept, space as {@code +}. */
-    static String urlEncode(String text) {
-        StringBuilder encoded = new StringBuilder(text.length());
-        for (byte value : text.getBytes(StandardCharsets.UTF_8)) {
-            char character = (char) (value & 0xFF);
-            if ((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
-                    || (character >= '0' && character <= '9') || "-_.!*()".indexOf(character) >= 0) {
-                encoded.append(character);
-            } else if (character == ' ') {
-                encoded.append('+');
-            } else {
-                encoded.append('%').append(HexFormat.of().toHexDigits((byte) character));
-            }
-        }
-        return encoded.toString();
-    }
-
-    /** .NET {@code HttpUtility.UrlDecode}: {@code +} as space, {@code %xx} as UTF-8 bytes. */
-    static String urlDecode(String text) {
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream(text.length());
-        int index = 0;
-        while (index < text.length()) {
-            char character = text.charAt(index);
-            if (character == '+') {
-                bytes.write(' ');
-                index++;
-            } else if (character == '%' && isHex(text, index + 1)) {
-                bytes.write(Integer.parseInt(text.substring(index + 1, index + 3), 16));
-                index += 3;
-            } else {
-                byte[] encoded = String.valueOf(character).getBytes(StandardCharsets.UTF_8);
-                bytes.write(encoded, 0, encoded.length);
-                index++;
-            }
-        }
-        return bytes.toString(StandardCharsets.UTF_8);
-    }
-
-    private static boolean isHex(String text, int from) {
-        return from + 1 < text.length() && Character.digit(text.charAt(from), 16) >= 0
-            && Character.digit(text.charAt(from + 1), 16) >= 0;
-    }
-
-    static String fixedLengthEncode(String text) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(text.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is not available", e);
-        }
     }
 
     private static JsonNode toJson(JsonNode value) {

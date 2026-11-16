@@ -136,6 +136,13 @@ public record IndexerParameters(Integer batchSize, Integer maxFailedItems, Integ
         return text("executionEnvironment", "standard");
     }
 
+    /**
+     * Whether the indexer runs in the private execution environment, the only one that can use a shared private link.
+     */
+    public boolean privateExecution() {
+        return "private".equalsIgnoreCase(executionEnvironment());
+    }
+
     private String text(String name, String fallback) {
         JsonNode value = configuration.get(name);
         if (IndexerJson.isNull(value) || value.isContainerNode()) {

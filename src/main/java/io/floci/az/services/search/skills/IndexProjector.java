@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.floci.az.services.search.indexer.SkillsetRunner;
 import io.floci.az.services.search.indexer.SkillsetRunner.ProjectedDocument;
 import io.floci.az.services.search.model.SearchJson;
 import io.floci.az.services.search.skills.EnrichedDocument.Located;
@@ -33,7 +34,7 @@ import java.util.function.Function;
 final class IndexProjector {
 
     /** The enrichment node that holds the parent document's key. */
-    static final String DOCUMENT_KEY_NODE = "AzureSearch_DocumentKey";
+    static final String DOCUMENT_KEY_NODE = SkillsetRunner.DOCUMENT_KEY_NODE;
 
     private static final JsonNodeFactory NODES = JsonNodeFactory.instance;
     private static final int HASH_LENGTH = 12;

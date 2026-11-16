@@ -59,7 +59,7 @@ EXPOSE 4577
 HEALTHCHECK --interval=5s --timeout=3s --retries=10 CMD ["/usr/local/bin/healthcheck.sh"]
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["/app/application", "-Dquarkus.http.host=0.0.0.0"]
+CMD ["/app/application"]
 
 # No USER directive on purpose: the image stays root so entrypoint.sh can fix up
 # /app/data ownership before dropping to uid 1001 through coreutils chroot.

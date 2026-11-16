@@ -9,6 +9,8 @@ import io.floci.az.core.auth.RbacDecision;
 import io.floci.az.core.auth.RbacEvaluator;
 import io.floci.az.core.auth.RbacOperation;
 import io.floci.az.core.auth.RbacPrincipal;
+import io.floci.az.core.cloud.CloudCatalog;
+import io.floci.az.core.cloud.CloudProfile;
 import io.floci.az.core.directory.AzureDirectory;
 import io.floci.az.services.entra.TokenValidator;
 import io.floci.az.services.entra.TokenValidator.Rejection;
@@ -39,16 +41,19 @@ import java.util.Optional;
  *       the API key is used". When the service refuses keys ({@code disableLocalAuth}), a request with a key is a 403
  *       whatever else it carries: the service "refuses all data-related requests that pass an API key".</li>
  *   <li>An admin key may call every operation; a query key only the reads of an index's documents collection. A key
- *       the service does not know is accepted as an admin key, floci-az's usual leniency, and refused with a 403
- *       under {@code parity: strict}.</li>
+ *       the service does not know is refused with a 403 by a service created through Microsoft.Search, whose keys
+ *       are real ("a request ... is accepted if both the request and the API key are valid"), so a regenerated or
+ *       deleted key stops working as it does in Azure. A service a data-plane request provisioned accepts it as an
+ *       admin key, floci-az's usual leniency, except under {@code parity: strict}.</li>
  *   <li>A bearer token sent to a keys-only service is a 403: such requests "are automatically denied, regardless of
  *       the underlying permissions". Otherwise, when {@link EmulatorConfig#strictTokens()} is on, the token must be
  *       one floci-az's Entra issued for a search audience (the {@code https://search.azure.com/.default} scope and
  *       its sovereign-cloud forms); when it is off, its claims are read without verification, as everywhere in
  *       floci-az.</li>
  *   <li>A request that fails authentication (no credential, or a refused token) is answered as the service's
- *       {@code aadAuthFailureMode} says: a 401 with a bearer challenge naming {@code https://search.azure.com}, or a
- *       403. A keys-only service answers a request without a key with a plain 401.</li>
+ *       {@code aadAuthFailureMode} says: a 401 with a bearer challenge naming the search audience of the request's
+ *       cloud ({@code https://search.azure.com}, {@code https://search.azure.us} or {@code https://search.azure.cn}),
+ *       or a 403. A keys-only service answers a request without a key with a plain 401.</li>
  * </ul>
  *
  * <p><b>Roles.</b> When {@link EmulatorConfig#strictRbac()} is on, a bearer caller also needs a role assignment that
@@ -84,14 +89,17 @@ public class SearchAuthorizer {
         RbacOperation.dataAction("Microsoft.Search/searchServices/indexes/contentSecurity/elevatedOperations/read");
 
     /**
-     * The audiences a search token may carry: the {@code SearchAudience} values of azure-search-documents (public
-     * cloud, Azure US Government, Azure China), whose {@code /.default} scopes the SDKs request.
+     * The search audience of each cloud, by the cloud's catalog name: the {@code SearchAudience} values of
+     * azure-search-documents, whose {@code /.default} scopes the SDKs request, and the resource a bearer challenge
+     * names.
      */
-    public static final List<String> AUDIENCES =
-        List.of("https://search.azure.com", "https://search.azure.us", "https://search.azure.cn"); // cloud-literal: the SDKs' SearchAudience values for every cloud
+    private static final Map<String, String> CLOUD_AUDIENCES = Map.of(
+        CloudCatalog.PUBLIC_CLOUD, "https://search.azure.com", // cloud-literal: SearchAudience of the public cloud
+        "AzureUSGovernment", "https://search.azure.us", // cloud-literal: SearchAudience of Azure US Government
+        "AzureChinaCloud", "https://search.azure.cn"); // cloud-literal: SearchAudience of Azure China
 
-    /** The resource a bearer challenge names: the public cloud's search audience, the SDKs' default. */
-    private static final String CHALLENGE_RESOURCE = "https://search.azure.com"; // cloud-literal: the SDKs' default SearchAudience
+    /** The audiences a search token may carry: the search audience of every cloud. */
+    public static final List<String> AUDIENCES = List.copyOf(CLOUD_AUDIENCES.values());
 
     private static final String BEARER = "Bearer ";
 
@@ -144,11 +152,19 @@ public class SearchAuthorizer {
                 : new Denied(SearchErrorCode.FORBIDDEN, "Access denied: a query key can only read the documents of an "
                     + "index; this operation needs an admin key.");
         }
-        if (config.parity().includes(ParityLevel.STRICT)) {
+        if (refusesUnknownKeys(service)) {
             return new Denied(SearchErrorCode.FORBIDDEN, "Access denied: the api-key is not a key of the search "
                 + "service '" + service.name() + "'.");
         }
         return new Allowed(Caller.UNKNOWN_KEY);
+    }
+
+    /**
+     * Whether a key the service does not know is refused: always for a service created through Microsoft.Search,
+     * whose keys are real; for a service a data-plane request provisioned, only under {@code parity: strict}.
+     */
+    private boolean refusesUnknownKeys(SearchServiceInfo service) {
+        return service.resourceId() != null || config.parity().includes(ParityLevel.STRICT);
     }
 
     private AuthorizationDecision authorizeToken(AzureRequest request, String authorization, SearchServiceInfo service,
@@ -200,14 +216,24 @@ public class SearchAuthorizer {
     }
 
     /**
-     * The bearer challenge: the emulator's authorize endpoint in the service's tenant, and the search audience as the
-     * resource. Every value is the emulator's own, never one the client sent.
+     * The bearer challenge: the emulator's authorize endpoint in the service's tenant, and the search audience of the
+     * cloud the request addresses as the resource. Every value is the emulator's own, never one the client sent.
      */
     private String challenge(AzureRequest request, SearchServiceInfo service, boolean invalidToken) {
         String authorizationUri = RequestUrls.resolveBaseUrl(request, config) + "/" + tenantOf(service)
             + "/oauth2/v2.0/authorize";
-        return "Bearer authorization_uri=\"" + authorizationUri + "\", resource=\"" + CHALLENGE_RESOURCE + "\""
+        return "Bearer authorization_uri=\"" + authorizationUri + "\", resource=\"" + challengeResource(request) + "\""
             + (invalidToken ? ", error=\"invalid_token\"" : "");
+    }
+
+    /**
+     * The search audience of the cloud the request addresses ({@code https://search.azure.us} for a request to
+     * {@code {service}.search.azure.us}), or of the default cloud for a request whose scope was not resolved.
+     */
+    private String challengeResource(AzureRequest request) {
+        CloudProfile cloud = request.scope() == null ? directory.defaultCloud() : request.scope().cloud();
+        String audience = CLOUD_AUDIENCES.get(cloud.name());
+        return audience == null ? CLOUD_AUDIENCES.get(CloudCatalog.PUBLIC_CLOUD) : audience;
     }
 
     /** The tenant of the service's subscription; the default tenant for a service without an ARM resource. */

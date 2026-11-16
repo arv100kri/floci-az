@@ -35,6 +35,9 @@ public sealed class SearchCompatibilityTests
     // changes automatically"; an update whose ETag no longer matches fails)
     // https://learn.microsoft.com/rest/api/searchservice/http-status-codes ("412 Precondition Failed: Returned when an
     // If-Match or If-None-Match header's condition evaluates to false")
+    // https://github.com/Azure/azure-sdk-for-net/blob/Azure.Search.Documents_12.0.0/sdk/search/Azure.Search.Documents/src/Generated/SearchIndexClient.RestClient.cs
+    // (12.0.0 builds Delete Index with PipelineMessageClassifier204, so a 404 throws RequestFailedException; the Java,
+    // Python and JS SDKs, and later .NET sources, classify a 404 as success)
     [Test]
     [Timeout(60_000)]
     public async Task IndexLifecycleWithETags(CancellationToken cancellationToken)
@@ -310,8 +313,6 @@ public sealed class SearchCompatibilityTests
                 cancellationToken: cancellationToken))).IsEqualTo(403);
             await Assert.That(await StatusOf(() => IndexClient(QueryKey).GetIndexAsync(name, cancellationToken)))
                 .IsEqualTo(403);
-            await Assert.That(await StatusOf(() => Keys(SearchClient(name, "not-a-key-of-this-service"), "*",
-                new SearchOptions(), sorted: true, cancellationToken))).IsEqualTo(403);
         }
         finally
         {

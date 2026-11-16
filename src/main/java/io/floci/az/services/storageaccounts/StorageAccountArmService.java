@@ -523,6 +523,20 @@ public class StorageAccountArmService
         };
     }
 
+    // ── Reads for other services ────────────────────────────────────────────
+
+    /**
+     * The stored account {@code id} names, as its GET answers it: how another service reads an account's settings,
+     * such as Search's indexers, which check its network rules before they read its data. Empty for none, and for an
+     * id that names no storage account.
+     */
+    public Optional<Map<String, Object>> account(ArmResourceId id) {
+        if (!ACCOUNT_TYPE.equalsIgnoreCase(id.typePath()) || id.name() == null) {
+            return Optional.empty();
+        }
+        return accounts.get(id).map(Stored::value);
+    }
+
     // ── Resource index, global names, reset ─────────────────────────────────
 
     @Override
