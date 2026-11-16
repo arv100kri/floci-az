@@ -3,6 +3,7 @@ package io.floci.az.services.containerapps;
 import io.floci.az.config.EmulatorConfig;
 import io.floci.az.core.AzureRequest;
 import io.floci.az.core.docker.ContainerLifecycleManager;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.core.Response;
@@ -35,6 +36,15 @@ public class ContainerAppIngressProxy {
     public ContainerAppIngressProxy(EmulatorConfig config) {
         this.timeout = Duration.ofSeconds(config.services().containerApps().ingressTimeoutSeconds());
         this.httpClient = HttpClient.newBuilder().connectTimeout(timeout).build();
+    }
+
+    /**
+     * Stops the HTTP client's threads. Its selector thread holds the context class loader it was started with, so a
+     * client left running keeps the stopped application's classes loaded.
+     */
+    @PreDestroy
+    void stop() {
+        httpClient.shutdownNow();
     }
 
     public Response proxy(AzureRequest request, ContainerLifecycleManager.EndpointInfo endpoint) {

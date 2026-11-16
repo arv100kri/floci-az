@@ -12,6 +12,7 @@ import io.floci.az.core.docker.ContainerSpec;
 import io.floci.az.core.docker.ContainerStorageHelper;
 import io.floci.az.core.docker.DockerHostResolver;
 import io.floci.az.services.functions.FunctionModels.FunctionDefinition;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
@@ -81,6 +82,15 @@ public class ContainerLauncher {
         this.httpClient      = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(2))
                 .build();
+    }
+
+    /**
+     * Stops the HTTP client's threads. Its selector thread holds the context class loader it was started with, so a
+     * client left running keeps the stopped application's classes loaded.
+     */
+    @PreDestroy
+    void stopHttpClient() {
+        httpClient.shutdownNow();
     }
 
     /**

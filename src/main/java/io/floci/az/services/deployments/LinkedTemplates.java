@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.jboss.logging.Logger;
 
@@ -51,7 +52,7 @@ public class LinkedTemplates {
         .build();
 
     private final Duration timeout;
-    private final HttpClient http;
+    private volatile HttpClient http;
 
     public LinkedTemplates() {
         this(TIMEOUT);
@@ -60,11 +61,40 @@ public class LinkedTemplates {
     /** A downloader with its own deadline, for tests. */
     LinkedTemplates(Duration timeout) {
         this.timeout = timeout;
-        this.http = HttpClient.newBuilder()
-            .version(HttpClient.Version.HTTP_1_1)
-            .connectTimeout(timeout)
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+    }
+
+    /**
+     * Stops the HTTP client's threads. Its selector thread holds the context class loader it was started with, so a
+     * client left running keeps the stopped application's classes loaded.
+     */
+    @PreDestroy
+    void stop() {
+        HttpClient client = http;
+        if (client != null) {
+            client.shutdownNow();
+        }
+    }
+
+    /**
+     * The HTTP client, built on first use rather than in the constructor, which the bean's client proxy would run
+     * too.
+     */
+    private HttpClient http() {
+        HttpClient client = http;
+        if (client == null) {
+            synchronized (this) {
+                client = http;
+                if (client == null) {
+                    client = HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .connectTimeout(timeout)
+                        .followRedirects(HttpClient.Redirect.NORMAL)
+                        .build();
+                    http = client;
+                }
+            }
+        }
+        return client;
     }
 
     /**
@@ -128,7 +158,7 @@ public class LinkedTemplates {
         }
         Instant deadline = Instant.now().plus(timeout);
         try {
-            HttpResponse<InputStream> response = http.send(
+            HttpResponse<InputStream> response = http().send(
                 HttpRequest.newBuilder(target).timeout(timeout).GET().build(), HttpResponse.BodyHandlers.ofInputStream());
             byte[] content = readBody(uri, response.body(), deadline);
             if (response.statusCode() != 200) {
