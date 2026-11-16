@@ -237,17 +237,17 @@ make stop
 ```
 compatibility-tests/
   sdk-test-python/      : Azure SDK for Python (pytest): blob/queue/table, cosmos, vm, redis, acr,
-                          managed identity, plus appconfig/ and keyvault/ sub-suites
+                          managed identity, plus appconfig/, keyvault/ and search/ sub-suites
   sdk-test-java/        : Azure SDK for Java (BOM; the primary compat target): blob/queue/table,
                           cosmos + all engines, functions, keyvault, appconfig, eventhub,
                           servicebus, eventgrid, apim, sql, postgres, vm, datalake,
-                          managed identity
+                          managed identity, AI Search
   sdk-test-node/        : Azure SDK for JS (jest): blob, queue, table, cosmos, appconfig,
-                          keyvault, eventhub, servicebus, managed identity
+                          keyvault, eventhub, servicebus, managed identity, AI Search
   sdk-test-dotnet/      : Azure SDK for .NET (TUnit): blob service SAS, cosmos (+ bracket properties,
                           point partition, transactional batch), keyvault (+ certificates, timestamps),
-                          servicebus (+ lock renewal, metadata, peek-lock), signalr. The only suite
-                          covering SignalR
+                          servicebus (+ lock renewal, metadata, peek-lock), signalr, AI Search.
+                          The only suite covering SignalR
   sdk-test-cpp/         : Azure SDK for C++ (GoogleTest via vcpkg): blob, queue. Built from source, so ~6 min cold
   compat-terraform/     : hashicorp/azurerm Terraform provider (BATS)
   compat-opentofu/      : OpenTofu with the azurerm provider (BATS)
