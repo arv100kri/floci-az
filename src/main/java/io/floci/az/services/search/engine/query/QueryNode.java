@@ -38,7 +38,10 @@ public sealed interface QueryNode {
     record Prefix(String prefix) implements QueryNode {
     }
 
-    /** Terms matching a pattern of {@code *} (any characters) and {@code ?} (one character); unscored. */
+    /**
+     * Terms matching a pattern of {@code *} (any characters) and {@code ?} (one character); a backslash makes the next
+     * character literal. Unscored.
+     */
     record Wildcard(String pattern) implements QueryNode {
     }
 
@@ -46,7 +49,7 @@ public sealed interface QueryNode {
     record Regex(String pattern) implements QueryNode {
     }
 
-    /** Terms within {@code maxEdits} edits (0 to 2) of {@code term}; unscored. */
+    /** Terms within {@code maxEdits} edits (0 to 2) of {@code term}; scored over the terms it expands to. */
     record Fuzzy(String term, int maxEdits) implements QueryNode {
     }
 

@@ -228,7 +228,7 @@ class SemanticStageTest {
         SearchPipeline pipeline = new SearchPipeline(List.of(new FilterStage(), new TextRetrievalStage(),
             new VectorRetrievalStage(), new FusionStage(), new ScoringProfileStage(), functionBoost,
             new FacetStage(), new SemanticStage(), new SortAndPageStage(), new HighlightStage()),
-            new NotImplementedSuggestStage());
+            new InfixSuggestStage());
 
         SearchOutcome boosted = pipeline.run(INDEX, semantic("hotel with a rooftop pool").scoringProfile("boost")
             .build(), EngineSettings.DEFAULTS);

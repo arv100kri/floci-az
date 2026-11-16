@@ -13,8 +13,7 @@ import java.util.Map;
 
 /**
  * Suggest Documents ({@code docs/search.suggest} by GET, {@code docs/search.post.suggest} by POST). The parameters
- * of either form are handed to the engine's {@code SuggestStage} under their POST names; the stage is a stub that
- * answers 501 until suggesters land.
+ * of either form are handed to the engine's {@code SuggestStage} under their POST names.
  */
 @ApplicationScoped
 public class SuggestController {

@@ -16,7 +16,6 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.endsWith;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.everyItem;
@@ -235,12 +234,10 @@ class SearchQueryTest {
 
     @Test
     void featuresOfLaterStagesAreClearlyMarked() {
-        search("{\"search\": \"hotel\", \"queryType\": \"full\"}").statusCode(501)
-            .body("error.code", equalTo("NotImplemented"));
         search("{\"search\": \"hotel\", \"queryType\": \"semantic\"}").statusCode(400);
         search("{\"search\": \"hotel\", \"scoringProfile\": \"missing\"}").statusCode(400);
         search("{\"search\": \"hotel\", \"facets\": [\"Category,count:5\"]}").statusCode(200)
-            .body("'@search.facets'.Category", empty());
+            .body("'@search.facets'.Category.value", contains("Boutique", "Suite"));
         search("{\"search\": \"hotel\", \"searchMode\": \"sometimes\"}").statusCode(400);
         search("{\"search\": \"hotel\", \"queryType\": \"fancy\"}").statusCode(400);
         search("{\"search\": \"hotel\", \"top\": \"two\"}").statusCode(400);

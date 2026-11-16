@@ -155,7 +155,8 @@ public final class IndexDefinitionParser {
         }
 
         validateScoringProfiles(output);
-        validateSuggesters(output, skeleton);
+        ScoringProfileValidator.validate(output, skeleton);
+        validateSuggesters(output, skeleton, catalog);
         validateCors(output.get("corsOptions"));
         output.set("semantic", SemanticDefinitionValidator.validate(output.get("semantic"), skeleton));
         validateNamedComponents(output, "analyzers");
@@ -498,7 +499,7 @@ public final class IndexDefinitionParser {
         }
     }
 
-    private static void validateSuggesters(ObjectNode index, SearchIndexDefinition fields) {
+    private static void validateSuggesters(ObjectNode index, SearchIndexDefinition fields, AnalysisCatalog catalog) {
         ArrayNode suggesters = (ArrayNode) index.get("suggesters");
         if (suggesters.size() > 1) {
             throw invalid("an index can define only one suggester.");
@@ -528,6 +529,17 @@ public final class IndexDefinitionParser {
                 if (field == null || !field.type().isText()) {
                     throw invalid("the suggester '" + name + "' names the source field '" + path + "', which is "
                         + "not a text field of the index.");
+                }
+                if (!field.searchable()) {
+                    throw invalid("the suggester '" + name + "' names the source field '" + path + "', which is "
+                        + "not searchable.");
+                }
+                String analyzer = field.analyzer() != null ? field.analyzer() : field.indexAnalyzer();
+                if (analyzer != null && !SearchFieldDefinition.DEFAULT_ANALYZER.equals(analyzer)
+                        && !catalog.isLanguageAnalyzer(analyzer)) {
+                    throw invalid("the suggester '" + name + "' names the source field '" + path + "', whose "
+                        + "analyzer '" + analyzer + "' suggesters do not support; use the standard Lucene analyzer or "
+                        + "a language analyzer.");
                 }
             }
         }

@@ -9,9 +9,9 @@ import java.util.List;
 /**
  * Runs a query through its stages, in order, inside the index's read lock. Immutable and shared.
  *
- * <p>The standard order: filter, text retrieval, vector retrieval, fusion, scoring profile, facets, semantic ranking,
- * sort and page, highlights. A stage is replaced by changing its class, not this order; add a stage here only when a
- * new step appears.</p>
+ * <p>The standard order: filter, permission trimming, text retrieval, vector retrieval, fusion, scoring profile, facets,
+ * semantic ranking, sort and page, highlights. A stage is replaced by changing its class, not this order; add a stage
+ * here only when a new step appears.</p>
  */
 public final class SearchPipeline {
 
@@ -36,7 +36,7 @@ public final class SearchPipeline {
             new SemanticStage(),
             new SortAndPageStage(),
             new HighlightStage()
-        ), new NotImplementedSuggestStage());
+        ), new InfixSuggestStage());
     }
 
     public List<SearchStage> stages() {
